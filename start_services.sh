@@ -86,7 +86,7 @@ setup_python_env() {
 
 
 # ====================================================================
-# 3. FUNGSI: DEPENDENCY CHECK & INSTALL
+# 3. FUNGSI: DEPENDENCY CHECK & INSTALL & KILL SERVICES
 # ====================================================================
 
 check_and_install_deps() {
@@ -145,27 +145,33 @@ check_and_install_deps() {
     fi
 }
 
+# FUNGSI BARU: Kill services yang sedang berjalan
+kill_existing_services() {
+    echo ""
+    echo "⚙️ Menghentikan proses lama secara spesifik..."
+    pkill -9 -f "server.py" 2>/dev/null
+    pkill -9 -f "yarn dev" 2>/dev/null
+    # Memberi waktu sejenak agar port benar-benar kosong
+    sleep 1 
+    echo "✅ Proses lama dibersihkan."
+}
+
+
 # ====================================================================
 # 4. MAIN EXECUTION FLOW
 # ====================================================================
 
 echo ""
 echo "=========================================================="
-echo "🚀 UniPresence Service Launcher v2.1 (Full Setup)"
+echo "🚀 UniPresence Service Launcher v3.0 (Full Setup)"
 echo "=========================================================="
 
-# Eksekusi Setup Environment & Instalasi
+# 1. Eksekusi Setup Environment & Instalasi
 setup_python_env
 check_and_install_deps
 
-
-# KILL EXISTING PROCESSES
-echo ""
-echo "Menghentikan proses lama secara spesifik..."
-pkill -9 -f "server.py" 2>/dev/null
-pkill -9 -f "yarn dev" 2>/dev/null
-# Memberi waktu sejenak agar port benar-benar kosong
-sleep 1 
+# 2. KILL EXISTING PROCESSES (Dipanggil di sini)
+kill_existing_services
 
 
 # START BACKEND

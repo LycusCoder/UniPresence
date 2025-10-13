@@ -12,11 +12,15 @@ from sqlalchemy.orm import sessionmaker, relationship
 from dotenv import load_dotenv
 import io
 from PIL import Image
+import traceback
 
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+# FIX CORS yang lebih agresif
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000"], 
+                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                                "allow_headers": ["Content-Type", "Authorization"]}})
 
 # Database setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,7 +57,9 @@ class Attendance(Base):
 Base.metadata.create_all(engine)
 
 def decode_base64_image(base64_string):
-    """Decode base64 string to numpy array"""
+    """Decode base64 string to numpy array
+    Returns: (numpy_array, error_string) - error_string is None if successful
+    """
     try:
         # Remove data URL prefix if present
         if 'base64,' in base64_string:
@@ -71,10 +77,12 @@ def decode_base64_image(base64_string):
         # Convert to numpy array
         img_array = np.array(img_rgb)
         
-        return img_array
+        return img_array, None
     except Exception as e:
-        print(f"Error decoding image: {str(e)}")
-        return None
+        error_msg = f"Error decoding image: {str(e)}"
+        print(error_msg)
+        traceback.print_exc()
+        return None, error_msg
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -98,11 +106,11 @@ def register():
         image_base64 = data['image']
         
         # Decode image
-        img_array = decode_base64_image(image_base64)
+        img_array, decode_error = decode_base64_image(image_base64)
         if img_array is None:
             return jsonify({
                 'status': 'error',
-                'message': 'Gagal memproses gambar'
+                'message': f'Gagal memproses gambar: {decode_error}'
             }), 400
         
         # Detect face
@@ -166,6 +174,8 @@ def register():
             session.close()
     
     except Exception as e:
+        print(f"Error in /api/register: {str(e)}")
+        traceback.print_exc()
         return jsonify({
             'status': 'error',
             'message': f'Error: {str(e)}'
@@ -186,11 +196,12 @@ def recognize():
         image_base64 = data['image']
         
         # Decode image
-        img_array = decode_base64_image(image_base64)
+        img_array, decode_error = decode_base64_image(image_base64)
         if img_array is None:
             return jsonify({
                 'status': 'error',
-                'message': 'Gagal memproses gambar'
+                'message': f'Gagal memproses gambar: {decode_error}',
+                'detected': False
             }), 400
         
         # Detect face
