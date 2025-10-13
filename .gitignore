@@ -1,0 +1,46 @@
+# ----------------------------------------
+# 1. Bytecode Python dan Cache
+# ----------------------------------------
+# File cache Python (.pyc dan folder __pycache__)
+__pycache__/
+*.pyc
+
+# Virtual Environment (jika kamu pakai venv/pipenv/etc. di luar conda)
+# Walaupun kamu pakai conda, ini baik untuk jaga-jaga
+venv/
+.venv/
+env/
+.env/
+
+# ----------------------------------------
+# 2. Database dan File Output Otomatis
+# ----------------------------------------
+# Database SQLite (biasanya hasil generate atau output lokal)
+*.sqlite
+*.db
+
+# ----------------------------------------
+# 3. Dependency Frontend (Node/Yarn)
+# ----------------------------------------
+# Folder dependencies yang didownload (meski sudah kamu exclude di tree)
+frontend/node_modules/
+# File cache Yarn/NPM
+.yarn/cache
+.npm/
+
+# Build artifacts (jika nanti kamu build frontend ke folder dist/build)
+/frontend/dist/
+/frontend/build/
+
+# ----------------------------------------
+# 4. File Konfigurasi Lokal dan Contoh
+# ----------------------------------------
+# File config lokal yang berisi rahasia/path
+config.json
+*.local
+
+# ----------------------------------------
+# 5. Log dan Debugging
+# ----------------------------------------
+*.log
+.DS_Store # (Untuk pengguna macOS, jaga-jaga)
