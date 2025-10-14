@@ -13,7 +13,7 @@ interface AttendanceRecord {
 }
 
 function App() {
-  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
+  const { user, token, isAuthenticated, loading: authLoading, logout } = useAuth();
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -22,6 +22,10 @@ function App() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Phase 6: Registration method and upload support
+  const [registrationMethod, setRegistrationMethod] = useState<'camera' | 'upload'>('camera');
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -91,6 +95,34 @@ function App() {
     }, 5000);
   };
 
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      showMessage('File harus berupa gambar (JPG, PNG, dll)', 'error');
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      showMessage('Ukuran file maksimal 5MB', 'error');
+      return;
+    }
+    
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImage(reader.result as string);
+      showMessage('Foto berhasil diupload. Silakan lengkapi data lainnya.', 'success');
+    };
+    reader.onerror = () => {
+      showMessage('Gagal membaca file', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleRegister = async () => {
     if (!name.trim() || !studentId.trim()) {
       showMessage('Nama dan NIM harus diisi', 'error');
@@ -98,12 +130,25 @@ function App() {
     }
 
     setIsProcessing(true);
-    const imageData = captureImage();
     
-    if (!imageData) {
-      showMessage('Gagal menangkap gambar', 'error');
-      setIsProcessing(false);
-      return;
+    let imageData: string | null = null;
+    
+    // Get image based on registration method
+    if (registrationMethod === 'camera') {
+      imageData = captureImage();
+      if (!imageData) {
+        showMessage('Gagal menangkap gambar dari kamera', 'error');
+        setIsProcessing(false);
+        return;
+      }
+    } else {
+      // Upload method
+      if (!uploadedImage) {
+        showMessage('Silakan upload foto terlebih dahulu', 'error');
+        setIsProcessing(false);
+        return;
+      }
+      imageData = uploadedImage;
     }
 
     try {
@@ -111,12 +156,18 @@ function App() {
         name,
         student_id: studentId,
         image: imageData
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       showMessage(response.data.message, 'success');
       setName('');
       setStudentId('');
+      setUploadedImage(null);
       setIsRegistering(false);
+      setRegistrationMethod('camera');
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || 'Gagal mendaftarkan wajah';
       showMessage(errorMsg, 'error');
@@ -290,6 +341,72 @@ function App() {
             {/* Registration Form */}
             {isRegistering && (
               <div className="mt-6 space-y-4" data-testid="registration-form">
+                {/* Registration Method Toggle */}
+                <div className="flex gap-2 p-1 bg-gray-100 rounded-lg" data-testid="registration-method-toggle">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRegistrationMethod('camera');
+                      setUploadedImage(null);
+                    }}
+                    className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                      registrationMethod === 'camera'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                    data-testid="camera-method-button"
+                  >
+                    📷 Gunakan Kamera
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegistrationMethod('upload')}
+                    className={`flex-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                      registrationMethod === 'upload'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                    data-testid="upload-method-button"
+                  >
+                    📁 Upload Foto
+                  </button>
+                </div>
+
+                {/* Upload Photo Section */}
+                {registrationMethod === 'upload' && (
+                  <div data-testid="upload-section">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload Foto Wajah
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      data-testid="file-upload-input"
+                    />
+                    {uploadedImage && (
+                      <div className="mt-3" data-testid="upload-preview">
+                        <p className="text-sm text-gray-600 mb-2">Preview:</p>
+                        <img 
+                          src={uploadedImage} 
+                          alt="Preview foto yang diupload" 
+                          className="w-full h-48 object-cover rounded-lg border-2 border-blue-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Camera Instructions */}
+                {registrationMethod === 'camera' && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      📸 Posisikan wajah Anda di depan kamera, pastikan pencahayaan cukup dan wajah terlihat jelas.
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Nama Lengkap

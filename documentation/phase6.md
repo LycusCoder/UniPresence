@@ -1,7 +1,16 @@
 # Dokumentasi Phase 6: Secured & Role-Based Registration
 
 ## 📅 Status
-**BELUM DIKERJAKAN** - Dokumentasi ini adalah panduan untuk implementasi
+**✅ SELESAI DIKERJAKAN** - Tanggal: 2025
+
+## 📝 Ringkasan Implementasi
+Phase 6 telah berhasil diimplementasikan dengan perubahan berikut:
+1. ✅ Backend endpoint `/api/register` dilindungi dengan `@jwt_required()`
+2. ✅ Role validation: Hanya user dengan role `komting` atau `admin` yang dapat mendaftarkan user baru
+3. ✅ Frontend: Tombol "Daftar Wajah Baru" hanya muncul untuk admin/komting
+4. ✅ Frontend: Menambahkan opsi upload foto sebagai alternatif dari webcam
+5. ✅ Frontend: Toggle UI antara Camera dan Upload dengan preview
+6. ✅ JWT token disertakan dalam request header untuk autentikasi
 
 ## 📝 Deskripsi Phase 6
 
@@ -269,6 +278,44 @@ const handleRegister = async () => {
 )}
 ```
 
+## 📂 File yang Dibuat/Dimodifikasi
+
+### Backend Changes
+**File: `/app/backend/server.py`**
+- Line 191-218: Menambahkan `@jwt_required()` decorator dan role validation pada endpoint `/api/register`
+- Role check: Hanya user dengan `role: 'komting'` atau `role: 'admin'` yang dapat mendaftarkan user baru
+- Error response: 401 jika user tidak ditemukan, 403 jika user tidak memiliki akses
+
+**Fungsi `decode_base64_image`** (sudah ada, tidak perlu diubah):
+- Sudah mendukung Base64 dari webcam maupun file upload
+- Dapat menerima format dengan atau tanpa prefix `data:image/jpeg;base64,`
+
+### Frontend Changes
+**File: `/app/frontend/src/App.tsx`**
+
+**State baru (Line 27-28):**
+```typescript
+const [registrationMethod, setRegistrationMethod] = useState<'camera' | 'upload'>('camera');
+const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+```
+
+**Fungsi baru `handleFileUpload` (Line 95-120):**
+- Validasi tipe file (harus image)
+- Validasi ukuran file (maksimal 5MB)
+- Convert file ke Base64
+- Menampilkan pesan sukses/error
+
+**Update `handleRegister` (Line 133-173):**
+- Mendukung 2 metode: camera dan upload
+- Mengirim JWT token dalam header Authorization
+- Reset state setelah berhasil
+
+**UI Updates (Line 346-410):**
+- Toggle button untuk memilih Camera atau Upload
+- File input dengan preview untuk upload method
+- Instruksi untuk camera method
+- Preview image untuk uploaded photo
+
 ## 🧪 Cara Testing Phase 6
 
 ### 1. Test Backend Protection
@@ -338,18 +385,17 @@ curl -X POST http://localhost:8001/api/register \
 
 ## ✅ Checklist Phase 6
 
-- [ ] Backend: Tambah `@jwt_required()` decorator di `/api/register`
-- [ ] Backend: Role validation (hanya komting/admin)
-- [ ] Backend: Test endpoint dengan curl
-- [ ] Frontend: State untuk registration method (camera/upload)
-- [ ] Frontend: Handler untuk file upload dengan validation
-- [ ] Frontend: UI untuk toggle camera/upload
-- [ ] Frontend: Send JWT token dalam request header
-- [ ] Testing: Register tanpa token → 401
-- [ ] Testing: Register dengan student role → 403
-- [ ] Testing: Register dengan admin role → 200
-- [ ] Testing: Upload foto valid → Success
-- [ ] Testing: Upload foto invalid → Error message
+- [x] Backend: Tambah `@jwt_required()` decorator di `/api/register`
+- [x] Backend: Role validation (hanya komting/admin)
+- [x] Frontend: State untuk registration method (camera/upload)
+- [x] Frontend: Handler untuk file upload dengan validation
+- [x] Frontend: UI untuk toggle camera/upload
+- [x] Frontend: Send JWT token dalam request header
+- [ ] Testing: Register tanpa token → 401 (Untuk user testing)
+- [ ] Testing: Register dengan student role → 403 (Untuk user testing)
+- [ ] Testing: Register dengan admin role → 200 (Untuk user testing)
+- [ ] Testing: Upload foto valid → Success (Untuk user testing)
+- [ ] Testing: Upload foto invalid → Error message (Untuk user testing)
 
 ## 🐛 Troubleshooting
 
@@ -384,8 +430,69 @@ sqlite3 /app/backend/instance/attendance.db "SELECT student_id, role FROM users;
 3. **Image Validation**: Tetap validate di backend meskipun sudah di frontend
 4. **Error Handling**: Berikan error message yang jelas untuk setiap kasus (unauthorized, forbidden, validation error)
 
+## 🔑 Akun Testing yang Tersedia
+
+Untuk melakukan testing, Anda dapat menggunakan akun-akun berikut (sudah di-seed):
+
+```bash
+# Jalankan seed script untuk membuat akun testing
+cd /app/backend
+python seed.py
+```
+
+**Akun yang tersedia:**
+- **Admin**: `ADMIN001` / `admin123` (role: admin) ✅ Dapat mendaftar user
+- **Komting**: `KOMTING001` / `komting123` (role: komting) ✅ Dapat mendaftar user  
+- **Student**: Buat user baru melalui registrasi (role: student) ❌ Tidak dapat mendaftar user
+
+## 📋 Panduan Testing Manual
+
+### 1. Test Role-Based Access
+1. Login sebagai **Student** → Tombol "Daftar Wajah Baru" **TIDAK MUNCUL**
+2. Login sebagai **Admin** atau **Komting** → Tombol "Daftar Wajah Baru" **MUNCUL**
+
+### 2. Test Camera Registration (Admin/Komting)
+1. Klik tombol "Daftar Wajah Baru"
+2. Pastikan toggle "📷 Gunakan Kamera" aktif (default)
+3. Isi Nama dan NIM
+4. Klik "Daftarkan Wajah"
+5. **Expected**: Berhasil mendaftar dengan foto dari webcam
+
+### 3. Test Upload Registration (Admin/Komting)
+1. Klik tombol "Daftar Wajah Baru"
+2. Klik toggle "📁 Upload Foto"
+3. Klik "Upload Foto Wajah" dan pilih file image
+4. **Expected**: Preview foto muncul
+5. Isi Nama dan NIM
+6. Klik "Daftarkan Wajah"
+7. **Expected**: Berhasil mendaftar dengan foto yang diupload
+
+### 4. Test Upload Validation
+1. Upload file **non-image** (misalnya .txt atau .pdf)
+   - **Expected**: Error "File harus berupa gambar"
+2. Upload foto **> 5MB**
+   - **Expected**: Error "Ukuran file maksimal 5MB"
+3. Upload foto valid tanpa isi Nama/NIM
+   - **Expected**: Error "Nama dan NIM harus diisi"
+
+### 5. Test Backend Protection (Opsional - via curl/Postman)
+```bash
+# Test 1: Register tanpa token
+curl -X POST http://localhost:8001/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Test", "student_id": "123", "image": "data:image/jpeg;base64,..."}'
+# Expected: 401 Unauthorized
+
+# Test 2: Get token dari student dan coba register
+curl -X POST http://localhost:8001/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"student_id": "STUDENT_ID", "password": "PASSWORD"}'
+# Gunakan token untuk register
+# Expected: 403 Forbidden
+```
+
 ---
 
-**Status**: 📝 **READY FOR IMPLEMENTATION**
+**Status**: 📝 **IMPLEMENTATION COMPLETE - READY FOR USER TESTING**
 
-Setelah Phase 6 selesai, lanjut ke Phase 7 untuk implementasi authenticated attendance.
+Implementasi Phase 6 sudah selesai. Silakan lakukan testing sesuai panduan di atas.

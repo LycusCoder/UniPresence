@@ -189,9 +189,35 @@ def get_current_user():
 # ==================== END PHASE 5 ====================
 
 @app.route('/api/register', methods=['POST'])
+@jwt_required()
 def register():
-    """Register new face"""
+    """Register new face - Protected endpoint, only komting/admin can register"""
     try:
+        # Get current user from JWT token
+        current_user_id = get_jwt_identity()
+        
+        session = SessionLocal()
+        try:
+            # Verify user exists and has proper role
+            current_user = session.query(User).filter_by(student_id=current_user_id).first()
+            
+            if not current_user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User tidak ditemukan'
+                }), 401
+            
+            # Role validation: only komting/admin can register new users
+            if current_user.role not in ['komting', 'admin']:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda tidak memiliki akses untuk mendaftarkan user baru. Hanya admin/komting yang dapat mendaftarkan user.'
+                }), 403
+        
+        finally:
+            session.close()
+        
+        # Continue with registration process
         data = request.get_json()
         
         if not data or 'name' not in data or 'student_id' not in data or 'image' not in data:
