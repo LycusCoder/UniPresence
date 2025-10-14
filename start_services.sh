@@ -176,7 +176,7 @@ kill_existing_services() {
     done
 
     # Memberi waktu sejenak agar port benar-benar kosong
-    sleep 1 
+    sleep 3 # <-- DIUBAH: Ditingkatkan ke 3 detik agar port pasti kosong sebelum start
     echo "✅ Proses lama dibersihkan."
 }
 
@@ -202,12 +202,14 @@ kill_existing_services
 echo ""
 echo "Memulai Backend..."
 # Eksekusi: $PYTHON_CMD menjalankan ./backend/server.py
+# (Asumsi Backend/server.py sudah terkonfigurasi untuk start di port 8001 secara default/internal)
 $PYTHON_CMD ./backend/server.py > "$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
 # Cek apakah proses benar-benar jalan
 if [ -z "$BACKEND_PID" ] || ! kill -0 "$BACKEND_PID" 2>/dev/null; then
     echo "❌ ERROR: Backend GAGAL dimulai. Cek log: $BACKEND_LOG"
+    exit 1 # <-- DITAMBAH: Hentikan skrip jika Backend gagal
 else
     echo "✅ Backend Berhasil dimulai (PID: $BACKEND_PID)"
 fi
@@ -215,13 +217,16 @@ fi
 
 # START FRONTEND
 echo "Memulai Frontend..."
-# Menggunakan 'yarn --cwd ./frontend dev'
-yarn --cwd ./frontend dev > "$FRONTEND_LOG" 2>&1 &
+# DIUBAH: Tambahkan --port 3000 dan --strictPort
+# --strictPort: Memaksa Vite menggunakan 3000, atau gagal (exit 1) jika terpakai.
+yarn --cwd ./frontend dev --port 3000 --strictPort > "$FRONTEND_LOG" 2>&1 & # <-- BARIS INI DIUBAH
 FRONTEND_PID=$!
 
 # Cek apakah proses benar-benar jalan
 if [ -z "$FRONTEND_PID" ] || ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    echo "❌ ERROR: Frontend GAGAL dimulai. Cek log: $FRONTEND_LOG"
+    # DIUBAH: Pesan error lebih informatif
+    echo "❌ ERROR: Frontend GAGAL dimulai (Kemungkinan port 3000 masih terpakai / Konflik). Cek log: $FRONTEND_LOG"
+    exit 1 # <-- DITAMBAH: Hentikan skrip jika Frontend gagal di port 3000
 else
     echo "✅ Frontend Berhasil dimulai (PID: $FRONTEND_PID)"
 fi

@@ -549,6 +549,186 @@ def get_users():
             'message': f'Error: {str(e)}'
         }), 500
 
+# ==================== PHASE 8: ACADEMIC FEATURES WITH FEATURE GATING ====================
+
+@app.route('/api/attendance/today', methods=['GET'])
+@jwt_required()
+def check_attendance_today():
+    """
+    Check if current user has marked attendance today
+    Returns attendance status for feature gating
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        
+        session = SessionLocal()
+        try:
+            # Check today's attendance
+            today = datetime.now().date()
+            attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if attendance:
+                return jsonify({
+                    'status': 'success',
+                    'attended': True,
+                    'timestamp': attendance.timestamp.isoformat(),
+                    'message': 'Anda sudah absen hari ini'
+                }), 200
+            else:
+                return jsonify({
+                    'status': 'success',
+                    'attended': False,
+                    'message': 'Anda belum absen hari ini'
+                }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/attendance/today: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/materials', methods=['GET'])
+@jwt_required()
+def get_materials():
+    """
+    Get study materials (only accessible if attended today)
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        
+        session = SessionLocal()
+        try:
+            # Check if user attended today
+            today = datetime.now().date()
+            attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if not attendance:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda harus absen terlebih dahulu untuk mengakses materi'
+                }), 403
+            
+            # Mock materials data (replace with real data later)
+            materials = [
+                {
+                    'id': 1,
+                    'title': 'Pertemuan 1: Pengenalan Algoritma',
+                    'description': 'Materi dasar algoritma dan flowchart',
+                    'file_url': '/materials/algo-01.pdf',
+                    'uploaded_at': '2025-10-01T10:00:00'
+                },
+                {
+                    'id': 2,
+                    'title': 'Pertemuan 2: Struktur Data Array',
+                    'description': 'Implementasi dan operasi pada array',
+                    'file_url': '/materials/algo-02.pdf',
+                    'uploaded_at': '2025-10-08T10:00:00'
+                },
+                {
+                    'id': 3,
+                    'title': 'Pertemuan 3: Linked List',
+                    'description': 'Single dan Double Linked List',
+                    'file_url': '/materials/algo-03.pdf',
+                    'uploaded_at': '2025-10-15T10:00:00'
+                }
+            ]
+            
+            return jsonify({
+                'status': 'success',
+                'data': materials
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/materials: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/assignments', methods=['GET'])
+@jwt_required()
+def get_assignments():
+    """
+    Get assignments/journals (only accessible if attended today)
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        
+        session = SessionLocal()
+        try:
+            # Check if user attended today
+            today = datetime.now().date()
+            attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if not attendance:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda harus absen terlebih dahulu untuk mengakses jurnal tugas'
+                }), 403
+            
+            # Mock assignments data
+            assignments = [
+                {
+                    'id': 1,
+                    'title': 'Tugas 1: Implementasi Binary Search',
+                    'description': 'Buat program binary search dengan Python',
+                    'deadline': '2025-10-20T23:59:59',
+                    'status': 'pending'
+                },
+                {
+                    'id': 2,
+                    'title': 'Tugas 2: Sorting Algorithms',
+                    'description': 'Implementasi dan bandingkan bubble sort, merge sort, quick sort',
+                    'deadline': '2025-10-27T23:59:59',
+                    'status': 'pending'
+                },
+                {
+                    'id': 3,
+                    'title': 'Tugas 3: Stack dan Queue',
+                    'description': 'Implementasi struktur data Stack dan Queue',
+                    'deadline': '2025-11-03T23:59:59',
+                    'status': 'pending'
+                }
+            ]
+            
+            return jsonify({
+                'status': 'success',
+                'data': assignments
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/assignments: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# ==================== END PHASE 8 ====================
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8001))
     app.run(host='0.0.0.0', port=port, debug=True)
