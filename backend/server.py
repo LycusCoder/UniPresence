@@ -337,15 +337,24 @@ def register():
         }), 500
 
 @app.route('/api/recognize', methods=['POST'])
+@jwt_required()  # ← PHASE 7: Protect with JWT authentication
 def recognize():
-    """Recognize face and mark attendance"""
+    """
+    Recognize face and mark attendance
+    PHASE 7 UPDATE: Only match against logged-in user's face encoding (1-to-1 matching)
+    This prevents User A from marking attendance using User B's face
+    """
     try:
+        # Get current logged-in user from JWT token
+        current_user_id = get_jwt_identity()
+        
         data = request.get_json()
         
         if not data or 'image' not in data:
             return jsonify({
                 'status': 'error',
-                'message': 'Gambar tidak ditemukan'
+                'message': 'Gambar tidak ditemukan',
+                'detected': False
             }), 400
         
         image_base64 = data['image']
@@ -359,13 +368,21 @@ def recognize():
                 'detected': False
             }), 400
         
-        # Detect face
+        # Detect faces
         face_locations = face_recognition.face_locations(img_array)
         
+        # STRICT VALIDATION: Must detect exactly 1 face
         if len(face_locations) == 0:
             return jsonify({
                 'status': 'error',
                 'message': 'Wajah tidak terdeteksi',
+                'detected': False
+            }), 200
+        
+        if len(face_locations) > 1:
+            return jsonify({
+                'status': 'error',
+                'message': f'Terdeteksi {len(face_locations)} wajah. Pastikan hanya wajah Anda yang terlihat.',
                 'detected': False
             }), 200
         
@@ -381,66 +398,74 @@ def recognize():
         
         unknown_encoding = face_encodings[0]
         
-        # Get all registered users
+        # Get ONLY the logged-in user from database (1-to-1 matching)
         session = SessionLocal()
         try:
-            users = session.query(User).all()
+            current_user = session.query(User).filter_by(student_id=current_user_id).first()
             
-            if len(users) == 0:
+            if not current_user:
                 return jsonify({
                     'status': 'error',
-                    'message': 'Belum ada wajah terdaftar',
+                    'message': 'User tidak ditemukan',
+                    'detected': False
+                }), 404
+            
+            # Check if user has face encoding registered
+            if not current_user.face_encoding:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Wajah untuk akun {current_user.name} belum terdaftar. Silakan hubungi admin.',
                     'detected': False
                 }), 200
             
-            # Compare with all registered faces
-            for user in users:
-                known_encoding = np.frombuffer(user.face_encoding, dtype=np.float64)
-                
-                # Compare faces
-                matches = face_recognition.compare_faces([known_encoding], unknown_encoding, tolerance=0.6)
-                face_distance = face_recognition.face_distance([known_encoding], unknown_encoding)
-                
-                if matches[0]:
-                    # Check if already marked attendance today
-                    today = datetime.now().date()
-                    existing_attendance = session.query(Attendance).filter(
-                        Attendance.student_id == user.student_id,
-                        Attendance.timestamp >= datetime.combine(today, datetime.min.time())
-                    ).first()
-                    
-                    if existing_attendance:
-                        return jsonify({
-                            'status': 'success',
-                            'message': 'Absensi sudah tercatat hari ini',
-                            'name': user.name,
-                            'student_id': user.student_id,
-                            'already_marked': True,
-                            'detected': True,
-                            'confidence': float(1 - face_distance[0])
-                        }), 200
-                    
-                    # Mark attendance
-                    new_attendance = Attendance(student_id=user.student_id)
-                    session.add(new_attendance)
-                    session.commit()
-                    
-                    return jsonify({
-                        'status': 'success',
-                        'message': 'Absensi berhasil dicatat',
-                        'name': user.name,
-                        'student_id': user.student_id,
-                        'already_marked': False,
-                        'detected': True,
-                        'confidence': float(1 - face_distance[0]),
-                        'timestamp': datetime.now().isoformat()
-                    }), 200
+            # Get the user's face encoding
+            known_encoding = np.frombuffer(current_user.face_encoding, dtype=np.float64)
             
-            # No match found
+            # Compare faces: 1-to-1 matching with logged-in user only
+            matches = face_recognition.compare_faces([known_encoding], unknown_encoding, tolerance=0.6)
+            face_distance = face_recognition.face_distance([known_encoding], unknown_encoding)
+            
+            # If face does NOT match → REJECT (Security Fix)
+            if not matches[0]:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Wajah tidak cocok dengan akun {current_user.name}. Silakan gunakan wajah Anda sendiri.',
+                    'detected': False,
+                    'confidence': float(1 - face_distance[0])
+                }), 200
+            
+            # Face matches! Check if already marked attendance today
+            today = datetime.now().date()
+            existing_attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user.student_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if existing_attendance:
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Absensi sudah tercatat hari ini',
+                    'name': current_user.name,
+                    'student_id': current_user.student_id,
+                    'already_marked': True,
+                    'detected': True,
+                    'confidence': float(1 - face_distance[0])
+                }), 200
+            
+            # Mark attendance
+            new_attendance = Attendance(student_id=current_user.student_id)
+            session.add(new_attendance)
+            session.commit()
+            
             return jsonify({
-                'status': 'error',
-                'message': 'Wajah tidak dikenali',
-                'detected': False
+                'status': 'success',
+                'message': f'Selamat datang, {current_user.name}! Absensi berhasil dicatat.',
+                'name': current_user.name,
+                'student_id': current_user.student_id,
+                'already_marked': False,
+                'detected': True,
+                'confidence': float(1 - face_distance[0]),
+                'timestamp': datetime.now().isoformat()
             }), 200
         
         except Exception as e:
