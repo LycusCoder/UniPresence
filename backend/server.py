@@ -1,24 +1,33 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import face_recognition
 import numpy as np
 import base64
 import cv2
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, LargeBinary, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 import io
 from PIL import Image
 import traceback
+from passlib.hash import bcrypt
+
+from models import Base, User, Attendance
 
 load_dotenv()
 
 app = Flask(__name__)
-# FIX CORS yang lebih agresif
-CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000"], 
+
+# JWT Configuration
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'unipresence-secret-key-2024-change-this-in-production')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+jwt = JWTManager(app)
+
+# CORS Configuration
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "http://localhost:5173"], 
                                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                                 "allow_headers": ["Content-Type", "Authorization"]}})
 
@@ -29,29 +38,7 @@ os.makedirs(INSTANCE_DIR, exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{os.path.join(INSTANCE_DIR, 'attendance.db')}"
 engine = create_engine(DATABASE_URL, echo=False)
-Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
-
-# Database Models
-class User(Base):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
-    student_id = Column(String, unique=True, nullable=False)
-    face_encoding = Column(LargeBinary, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    attendances = relationship("Attendance", back_populates="user")
-
-class Attendance(Base):
-    __tablename__ = 'attendance'
-    
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(String, ForeignKey('users.student_id'), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    
-    user = relationship("User", back_populates="attendances")
 
 # Create tables
 Base.metadata.create_all(engine)
@@ -88,6 +75,118 @@ def decode_base64_image(base64_string):
 def health_check():
     """Health check endpoint"""
     return jsonify({'status': 'ok', 'message': 'Server is running'}), 200
+
+# ==================== PHASE 5: AUTHENTICATION ENDPOINTS ====================
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """Login endpoint - authenticate user and return JWT token"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'student_id' not in data or 'password' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'NIM dan password harus diisi'
+            }), 400
+        
+        student_id = data['student_id']
+        password = data['password']
+        
+        session = SessionLocal()
+        try:
+            # Find user by student_id
+            user = session.query(User).filter_by(student_id=student_id).first()
+            
+            if not user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'NIM tidak ditemukan'
+                }), 401
+            
+            if not user.password:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Akun belum memiliki password. Silakan hubungi administrator.'
+                }), 401
+            
+            # Verify password
+            if not bcrypt.verify(password, user.password):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Password salah'
+                }), 401
+            
+            # Create JWT token
+            access_token = create_access_token(
+                identity=user.student_id,
+                additional_claims={
+                    'name': user.name,
+                    'role': user.role or 'student'
+                }
+            )
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Login berhasil',
+                'access_token': access_token,
+                'user': {
+                    'student_id': user.student_id,
+                    'name': user.name,
+                    'role': user.role or 'student'
+                }
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/login: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/api/me', methods=['GET'])
+@jwt_required()
+def get_current_user():
+    """Get current authenticated user information"""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter_by(student_id=current_user_id).first()
+            
+            if not user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User tidak ditemukan'
+                }), 404
+            
+            return jsonify({
+                'status': 'success',
+                'user': {
+                    'student_id': user.student_id,
+                    'name': user.name,
+                    'role': user.role or 'student',
+                    'created_at': user.created_at.isoformat()
+                }
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/me: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# ==================== END PHASE 5 ====================
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -150,10 +249,11 @@ def register():
                     'message': f'NIM {student_id} sudah terdaftar'
                 }), 400
             
-            # Create new user
+            # Create new user with default role 'student'
             new_user = User(
                 name=name,
                 student_id=student_id,
+                role='student',
                 face_encoding=face_encoding.tobytes()
             )
             session.add(new_user)
@@ -348,6 +448,7 @@ def get_users():
                     'id': user.id,
                     'name': user.name,
                     'student_id': user.student_id,
+                    'role': user.role or 'student',
                     'created_at': user.created_at.isoformat()
                 })
             

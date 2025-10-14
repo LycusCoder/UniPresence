@@ -94,8 +94,8 @@ check_and_install_deps() {
     echo ""
     echo "--- Memeriksa Backend (Python) Dependencies ---"
     REQUIREMENTS_FILE="./backend/requirements.txt"
-    # Marker file agar tidak instal ulang setiap kali requirements.txt tidak berubah
-    DEPENDENCY_MARKER="$VENV_DIR/.backend_deps_installed" 
+    # Marker file dipindahkan ke dalam direktori ./backend/ agar folder pasti ada.
+    DEPENDENCY_MARKER="./backend/.backend_deps_installed" 
 
     if [ -f "$REQUIREMENTS_FILE" ]; then
         # Cek apakah marker file ada DAN requirements.txt tidak lebih baru (artinya sudah terinstal)
@@ -110,6 +110,7 @@ check_and_install_deps() {
                 echo "❌ ERROR: Gagal menginstal Python dependencies. Cek log instalasi di atas."
                 exit 1
             fi
+            # touch sekarang dijamin berhasil karena ./backend/ pasti ada
             touch "$DEPENDENCY_MARKER" # Buat marker baru
             echo "✅ Instalasi Backend selesai."
         fi

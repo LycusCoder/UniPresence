@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from './contexts/AuthContext';
+import Login from './pages/Login';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
 
@@ -11,6 +13,7 @@ interface AttendanceRecord {
 }
 
 function App() {
+  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
@@ -167,6 +170,22 @@ function App() {
     });
   };
 
+  // Show login page if not authenticated
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Memuat...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={() => window.location.reload()} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -186,13 +205,33 @@ function App() {
                 <p className="text-sm text-gray-600">Universitas Harkat Negeri</p>
               </div>
             </div>
-            <button
-              onClick={() => setIsRegistering(!isRegistering)}
-              className="px-6 py-2 bg-white text-primary border border-primary rounded-lg font-medium hover:bg-primary hover:text-white transition-colors duration-200"
-              data-testid="register-button"
-            >
-              {isRegistering ? 'Batal' : 'Daftar Wajah Baru'}
-            </button>
+            <div className="flex items-center space-x-4">
+              {/* User Info */}
+              <div className="text-right" data-testid="user-info">
+                <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
+                <p className="text-xs text-gray-600">{user?.student_id} • {user?.role}</p>
+              </div>
+              
+              {/* Register Button - Show for komting/admin only */}
+              {(user?.role === 'admin' || user?.role === 'komting') && (
+                <button
+                  onClick={() => setIsRegistering(!isRegistering)}
+                  className="px-6 py-2 bg-white text-blue-600 border border-blue-600 rounded-lg font-medium hover:bg-blue-600 hover:text-white transition-colors duration-200"
+                  data-testid="register-button"
+                >
+                  {isRegistering ? 'Batal' : 'Daftar Wajah Baru'}
+                </button>
+              )}
+              
+              {/* Logout Button */}
+              <button
+                onClick={logout}
+                className="px-6 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors duration-200"
+                data-testid="logout-button"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
