@@ -296,29 +296,34 @@ def register():
         # Save to database
         session = SessionLocal()
         try:
-            # Check if student_id already exists
+            # 1. Check if student_id already exists
             existing_user = session.query(User).filter_by(student_id=student_id).first()
-            if existing_user:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'NIM {student_id} sudah terdaftar'
-                }), 400
             
-            # Create new user with default role 'student'
-            new_user = User(
-                name=name,
-                student_id=student_id,
-                role='student',
-                face_encoding=face_encoding.tobytes()
-            )
-            session.add(new_user)
+            if existing_user:
+                # --- PERBAIKAN: Jika user sudah ada, UPDATE wajahnya ---
+                existing_user.face_encoding = face_encoding.tobytes()
+                existing_user.name = name  # Perbarui nama (jika ada perubahan)
+                # role tetap
+                message = f'Wajah {name} berhasil diperbarui!'
+            else:
+                # --- JIKA user baru, CREATE user baru ---
+                # Note: Ini untuk skenario di mana Admin mendaftarkan user baru yang belum di-seed
+                new_user = User(
+                    name=name,
+                    student_id=student_id,
+                    role='student',
+                    face_encoding=face_encoding.tobytes()
+                )
+                session.add(new_user)
+                message = f'Wajah {name} berhasil terdaftar!'
+
             session.commit()
             
             return jsonify({
                 'status': 'success',
-                'message': f'Wajah {name} berhasil terdaftar!'
+                'message': message
             }), 200
-        
+
         except Exception as e:
             session.rollback()
             return jsonify({

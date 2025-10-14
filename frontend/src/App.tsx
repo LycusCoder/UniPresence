@@ -29,19 +29,18 @@ function App() {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const recognitionIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    startCamera();
-    loadAttendanceRecords();
+    // Only start camera if authenticated
+    if (isAuthenticated) {
+      startCamera();
+      loadAttendanceRecords();
+    }
     
     return () => {
       stopCamera();
-      if (recognitionIntervalRef.current) {
-        clearInterval(recognitionIntervalRef.current);
-      }
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const startCamera = async () => {
     try {
@@ -51,13 +50,6 @@ function App() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
-      
-      // Start continuous recognition
-      recognitionIntervalRef.current = window.setInterval(() => {
-        if (!isRegistering && !isProcessing) {
-          recognizeFace();
-        }
-      }, 2000);
     } catch (error) {
       showMessage('Gagal mengakses kamera. Pastikan izin kamera diaktifkan.', 'error');
     }
@@ -177,27 +169,60 @@ function App() {
   };
 
   const recognizeFace = async () => {
+    // Check authentication
+    if (!isAuthenticated || !token) {
+      showMessage('Sesi Anda telah berakhir. Silakan login kembali.', 'error');
+      logout();
+      return;
+    }
+
     const imageData = captureImage();
-    if (!imageData) return;
+    if (!imageData) {
+      showMessage('Gagal menangkap gambar dari kamera', 'error');
+      return;
+    }
+
+    setIsProcessing(true);
 
     try {
+      // Include JWT token in request (PHASE 7)
       const response = await axios.post(`${BACKEND_URL}/api/recognize`, {
         image: imageData
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
-      if (response.data.detected && response.data.name) {
+      if (response.data.status === 'success' && response.data.detected) {
         setRecognizedUser(response.data.name);
+        
         if (!response.data.already_marked) {
-          showMessage(`Selamat datang, ${response.data.name}! Absensi tercatat.`, 'success');
+          showMessage(response.data.message, 'success');
           loadAttendanceRecords();
+        } else {
+          showMessage(response.data.message, 'success');
         }
+        
         setTimeout(() => setRecognizedUser(null), 3000);
-      } else {
+      } else if (response.data.status === 'error') {
+        // Show error message from backend
+        showMessage(response.data.message, 'error');
         setRecognizedUser(null);
       }
-    } catch (error) {
-      // Silently fail for recognition - don't show error messages for continuous recognition
+    } catch (error: any) {
+      // Handle authentication errors
+      if (error.response?.status === 401) {
+        showMessage('Sesi Anda telah berakhir. Silakan login kembali.', 'error');
+        logout();
+      } else if (error.response?.data?.message) {
+        showMessage(error.response.data.message, 'error');
+      } else {
+        showMessage('Gagal melakukan pengenalan wajah. Silakan coba lagi.', 'error');
+      }
       setRecognizedUser(null);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -320,23 +345,56 @@ function App() {
               />
               <canvas ref={canvasRef} className="hidden" />
               
+              {/* User Info Overlay - Show logged-in user */}
+              <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg">
+                <p className="text-sm font-semibold">{user?.name}</p>
+                <p className="text-xs text-gray-300">{user?.student_id}</p>
+              </div>
+              
               {/* Recognized Name Overlay */}
               {recognizedUser && (
                 <div 
-                  className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-4 py-2 rounded-lg font-semibold shadow-lg"
+                  className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg"
                   data-testid="recognized-name-overlay"
                 >
-                  {recognizedUser}
+                  ✓ {recognizedUser}
                 </div>
               )}
               
               {/* Detection Status */}
               {!isRegistering && (
                 <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-3 py-1 rounded text-sm">
-                  🔍 Mendeteksi wajah...
+                  👤 Siap untuk scan absensi
                 </div>
               )}
             </div>
+
+            {/* Scan Absensi Button - PHASE 7: Explicit manual trigger */}
+            {!isRegistering && (
+              <div className="mt-6">
+                <button
+                  onClick={recognizeFace}
+                  disabled={isProcessing}
+                  className="w-full px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  data-testid="scan-attendance-button"
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-2xl">📸</span>
+                      <span>Scan Absensi</span>
+                    </>
+                  )}
+                </button>
+                <p className="text-sm text-gray-600 text-center mt-3">
+                  Klik tombol di atas untuk melakukan scan wajah dan mencatat absensi
+                </p>
+              </div>
+            )}
 
             {/* Registration Form */}
             {isRegistering && (
@@ -448,7 +506,7 @@ function App() {
             <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
               <p className="text-sm text-gray-700">
                 <strong>💡 Tips:</strong> Pastikan wajah terlihat jelas dan pencahayaan cukup. 
-                Sistem akan mendeteksi wajah secara otomatis setiap 2 detik.
+                Klik tombol "Scan Absensi" untuk memulai pengenalan wajah.
               </p>
             </div>
           </div>

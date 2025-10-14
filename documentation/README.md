@@ -22,57 +22,53 @@
 
 ## 📋 Development Phases
 
-### ✅ Phase 5: Foundation of Security (Auth & Roles)
-**Status**: COMPLETE
+### ✅ Phase 1-4: Initial Development
+**Status**: ✅ COMPLETE
 
-**Fitur**:
+Basic face recognition system implementation.
+
+---
+
+### ✅ Phase 5: Foundation of Security (Auth & Roles)
+**Status**: ✅ COMPLETE
+
+**Implemented**:
 - JWT authentication system
 - Login/logout functionality
 - User roles (student, komting, admin)
 - Role-based UI rendering
 - Persistent authentication dengan localStorage
 
-**Key Files**:
-- Backend: `models.py`, `seed.py`, `server.py`
-- Frontend: `AuthContext.tsx`, `Login.tsx`, `App.tsx`
-
-**Dokumentasi**: [phase5.md](./phase5.md)
-
 ---
 
-### 📝 Phase 6: Secured & Role-Based Registration
-**Status**: PENDING IMPLEMENTATION
+### ✅ Phase 6: Secured & Role-Based Registration
+**Status**: ✅ COMPLETE
 
-**Fitur**:
-- JWT-protected registration endpoint
-- Role-based access (hanya komting/admin)
+**Implemented**:
+- JWT-protected registration endpoint (`@jwt_required()`)
+- Role-based access (hanya komting/admin yang bisa register)
 - Upload foto sebagai alternatif webcam
 - Enhanced validation (file size, type, face detection)
-
-**Goals**:
-- Mencegah user biasa mendaftar wajah tanpa izin
-- Support multiple input methods (camera + upload)
-- Improve user experience untuk registrasi
-
-**Dokumentasi**: [phase6.md](./phase6.md)
+- Toggle UI antara Camera dan Upload
 
 ---
 
-### 📝 Phase 7: Authenticated Attendance Core (The Fix)
-**Status**: PENDING IMPLEMENTATION
+### ✅ Phase 7: Authenticated Attendance Core (The Fix)
+**Status**: ✅ COMPLETE & TESTED
 
-**Fitur**:
-- JWT-protected attendance endpoint
-- **1-to-1 face matching** (user hanya bisa absen dengan wajahnya sendiri)
-- Strict validation (hanya 1 wajah per frame)
-- Clear error messages untuk security failures
+**Implemented**:
+- JWT-protected attendance endpoint (`@jwt_required()`)
+- **1-to-1 face matching** (security fix: user HANYA bisa absen dengan wajahnya sendiri)
+- Strict validation (tolak jika >1 wajah terdeteksi)
+- Descriptive error messages untuk security failures
+- Manual scan dengan tombol eksplisit "Scan Absensi"
+- User info overlay di kamera
+- Remove continuous auto-scan (better UX & performance)
 
-**Goals**:
-- **CRITICAL SECURITY FIX**: Mencegah user A absen menggunakan wajah user B
-- Implement proper face authentication
-- Ensure only authenticated users can mark attendance
-
-**Dokumentasi**: [phase7.md](./phase7.md)
+**Security Impact**:
+- 🔒 Prevents spoofing (User A tidak bisa absen pakai wajah User B)
+- 🔒 Anti-bypass dengan multiple faces validation
+- 🔒 Requires authentication untuk semua attendance operations
 
 ---
 
@@ -167,25 +163,22 @@ yarn dev
 │   └── package.json               # Node dependencies
 │
 └── documentation/
-    ├── README.md                  # This file
-    ├── phase5.md                  # Phase 5 docs (COMPLETE)
-    ├── phase6.md                  # Phase 6 docs (PENDING)
-    ├── phase7.md                  # Phase 7 docs (PENDING)
+    ├── README.md                  # This file (Project overview)
     └── phase8.md                  # Phase 8 docs (PENDING)
 ```
 
-## 🔑 Key Endpoints (Phase 5 - Current)
+## 🔑 Key Endpoints
 
 ### Authentication
 - `POST /api/login` - Login user dan dapatkan JWT token
-- `GET /api/me` (protected) - Get current user info
+- `GET /api/me` (🔒 protected) - Get current user info
 
 ### User Management
-- `POST /api/register` - Register new user face
+- `POST /api/register` (🔒 protected, admin/komting only) - Register new user face
 - `GET /api/users` - Get all registered users
 
 ### Attendance
-- `POST /api/recognize` - Face recognition dan mark attendance
+- `POST /api/recognize` (🔒 protected, **Phase 7: 1-to-1 matching**) - Face recognition dan mark attendance
 - `GET /api/attendance` - Get all attendance records
 
 ### Health Check
@@ -258,22 +251,23 @@ CORS(app, resources={r"/api/*": {
 
 ## 🔒 Security Features
 
-### Phase 5 (Implemented)
+### ✅ Implemented (Phase 5-7)
 - ✅ JWT-based authentication
 - ✅ Password hashing dengan bcrypt
 - ✅ Role-based access control (RBAC)
-- ✅ Protected endpoints
+- ✅ Protected endpoints (`@jwt_required()`)
 - ✅ Token expiry (24 hours)
+- ✅ JWT-protected registration (komting/admin only)
+- ✅ JWT-protected attendance endpoint
+- ✅ **1-to-1 face matching** (anti-spoofing)
+- ✅ Strict single-face validation (anti-bypass)
+- ✅ Descriptive security error messages
 
-### Phase 6 (Planned)
-- JWT-protected registration
-- Role validation untuk registration
-- File upload validation
-
-### Phase 7 (Planned - CRITICAL)
-- **1-to-1 face matching** (prevents spoofing)
-- Strict single-face validation
-- Authenticated attendance endpoint
+### 📝 Planned (Phase 8+)
+- Feature gating based on attendance
+- Rate limiting untuk API endpoints
+- Audit logging untuk security events
+- Token refresh mechanism
 
 ## 📈 Future Enhancements
 
@@ -322,5 +316,6 @@ Jika ada pertanyaan atau issue:
 ---
 
 **Last Updated**: October 14, 2025  
-**Current Phase**: Phase 5 (Complete) → Ready for Phase 6  
+**Current Status**: Phase 7 Complete ✅ → Ready for Phase 8  
+**Security Level**: 🔒 HIGH (JWT + 1-to-1 Face Matching + Anti-Spoofing)  
 **Contributors**: [LycusCoder]
