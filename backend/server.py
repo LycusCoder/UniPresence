@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
 import face_recognition
 import numpy as np
 import base64
@@ -26,10 +26,27 @@ app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'unipresence-sec
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 jwt = JWTManager(app)
 
-# CORS Configuration
-CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "http://localhost:5173"], 
-                                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                                "allow_headers": ["Content-Type", "Authorization"]}})
+# CORS Configuration - Updated for better preflight handling
+CORS(app, 
+     resources={r"/api/*": {
+         "origins": ["http://localhost:3000", "http://localhost:5173"],
+         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         "allow_headers": ["Content-Type", "Authorization"],
+         "expose_headers": ["Content-Type", "Authorization"],
+         "supports_credentials": True,
+         "max_age": 3600
+     }})
+
+# Additional CORS error handler for 500 errors
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    if origin in ["http://localhost:3000", "http://localhost:5173"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 # Database setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -192,6 +209,18 @@ def get_current_user():
 @jwt_required()
 def register():
     """Register new face - Protected endpoint, only komting/admin can register"""
+    
+    # 1. Ambil claims (termasuk role) dari token JWT
+    claims = get_jwt()
+    user_role = claims.get('role')
+    
+    # 2. Lakukan Role Validation
+    if user_role not in ['admin', 'komting']:
+        return jsonify({
+            'status': 'error',
+            'message': 'Akses ditolak. Hanya Admin atau Komting yang dapat mendaftarkan wajah.'
+        }), 403 # HTTP 403 Forbidden
+    
     try:
         # Get current user from JWT token
         current_user_id = get_jwt_identity()

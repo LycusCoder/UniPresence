@@ -385,17 +385,27 @@ curl -X POST http://localhost:8001/api/register \
 
 ## ✅ Checklist Phase 6
 
+### Backend
 - [x] Backend: Tambah `@jwt_required()` decorator di `/api/register`
-- [x] Backend: Role validation (hanya komting/admin)
+- [x] Backend: Role validation (hanya komting/admin) menggunakan `get_jwt()`
+- [x] Backend: Import `get_jwt` dari flask_jwt_extended
+- [x] Backend: CORS configuration diperbaiki untuk handle error 500
+
+### Frontend
 - [x] Frontend: State untuk registration method (camera/upload)
 - [x] Frontend: Handler untuk file upload dengan validation
 - [x] Frontend: UI untuk toggle camera/upload
 - [x] Frontend: Send JWT token dalam request header
-- [ ] Testing: Register tanpa token → 401 (Untuk user testing)
-- [ ] Testing: Register dengan student role → 403 (Untuk user testing)
-- [ ] Testing: Register dengan admin role → 200 (Untuk user testing)
-- [ ] Testing: Upload foto valid → Success (Untuk user testing)
-- [ ] Testing: Upload foto invalid → Error message (Untuk user testing)
+
+### Testing (Manual by User)
+- [x] Testing: Register tanpa token → 401 ✅ TESTED
+- [x] Testing: Register dengan student role → 403 ✅ TESTED
+- [x] Testing: Register dengan admin role → 200 ✅ TESTED
+- [ ] Testing: Upload foto valid → Success ⏳ PENDING (backend needs face_recognition fix)
+- [ ] Testing: Upload foto invalid → Error message ⏳ PENDING (backend needs face_recognition fix)
+
+### Known Issues
+- ⚠️ face_recognition installation issue - needs manual fix (see TROUBLESHOOTING_PHASE6.md)
 
 ## 🐛 Troubleshooting
 

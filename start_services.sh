@@ -94,7 +94,7 @@ check_and_install_deps() {
     echo ""
     echo "--- Memeriksa Backend (Python) Dependencies ---"
     REQUIREMENTS_FILE="./backend/requirements.txt"
-    # Marker file dipindahkan ke dalam direktori ./backend/ agar folder pasti ada.
+    # Marker file agar tidak instal ulang setiap kali requirements.txt tidak berubah
     DEPENDENCY_MARKER="./backend/.backend_deps_installed" 
 
     if [ -f "$REQUIREMENTS_FILE" ]; then
@@ -110,7 +110,6 @@ check_and_install_deps() {
                 echo "❌ ERROR: Gagal menginstal Python dependencies. Cek log instalasi di atas."
                 exit 1
             fi
-            # touch sekarang dijamin berhasil karena ./backend/ pasti ada
             touch "$DEPENDENCY_MARKER" # Buat marker baru
             echo "✅ Instalasi Backend selesai."
         fi
@@ -146,12 +145,36 @@ check_and_install_deps() {
     fi
 }
 
-# FUNGSI BARU: Kill services yang sedang berjalan
+# FUNGSI BARU: Kill services yang sedang berjalan (Enhanced by PORT)
 kill_existing_services() {
     echo ""
-    echo "⚙️ Menghentikan proses lama secara spesifik..."
+    echo "⚙️ Menghentikan proses lama berdasarkan PID dan PORT..."
+    
+    # 1. Kill berdasarkan Nama Proses (Fallback Lama, agar proses yang tidak ber-port juga ter-kill)
     pkill -9 -f "server.py" 2>/dev/null
     pkill -9 -f "yarn dev" 2>/dev/null
+    
+    # 2. Kill berdasarkan Port (Lebih Akurat menggunakan lsof/fuser)
+    # Port Backend (8001) dan Frontend (3000)
+    PORTS_TO_KILL=(3000 8000 8001)
+
+    for port in "${PORTS_TO_KILL[@]}"; do
+        # Menggunakan lsof yang umum di Linux/Mac. fuser bisa jadi alternatif jika lsof tidak ada
+        if command -v lsof &>/dev/null; then
+            PID=$(lsof -t -i:"$port")
+            if [ ! -z "$PID" ]; then
+                kill -9 "$PID" 2>/dev/null
+                echo "   [KILLED] Port $port (PID: $PID)"
+            fi
+        # Tambahkan fallback untuk fuser jika lsof tidak tersedia (opsional)
+        # elif command -v fuser &>/dev/null; then
+        #     fuser -k -n tcp "$port" 2>/dev/null
+        #     if [ $? -eq 0 ]; then
+        #         echo "   [KILLED] Port $port (via fuser)"
+        #     fi
+        fi
+    done
+
     # Memberi waktu sejenak agar port benar-benar kosong
     sleep 1 
     echo "✅ Proses lama dibersihkan."
