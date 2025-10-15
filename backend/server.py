@@ -303,19 +303,26 @@ def register():
                 # --- PERBAIKAN: Jika user sudah ada, UPDATE wajahnya ---
                 existing_user.face_encoding = face_encoding.tobytes()
                 existing_user.name = name  # Perbarui nama (jika ada perubahan)
+                
+                # Set default password = NIM if not already set
+                if not existing_user.password:
+                    existing_user.password = bcrypt.hash(student_id)
+                
                 # role tetap
                 message = f'Wajah {name} berhasil diperbarui!'
             else:
                 # --- JIKA user baru, CREATE user baru ---
                 # Note: Ini untuk skenario di mana Admin mendaftarkan user baru yang belum di-seed
+                # Password default = NIM (hashed)
                 new_user = User(
                     name=name,
                     student_id=student_id,
+                    password=bcrypt.hash(student_id),  # Password default = NIM
                     role='student',
                     face_encoding=face_encoding.tobytes()
                 )
                 session.add(new_user)
-                message = f'Wajah {name} berhasil terdaftar!'
+                message = f'Wajah {name} berhasil terdaftar! Password default: {student_id}'
 
             session.commit()
             
@@ -726,6 +733,179 @@ def get_assignments():
             'status': 'error',
             'message': f'Error: {str(e)}'
         }), 500
+
+
+# ==================== PROFILE & PASSWORD MANAGEMENT ====================
+
+@app.route('/api/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    """
+    Update user profile (name only)
+    Feature Gating: User must attend today to access
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        
+        data = request.get_json()
+        
+        if not data or 'name' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nama harus diisi'
+            }), 400
+        
+        new_name = data['name'].strip()
+        
+        if not new_name:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nama tidak boleh kosong'
+            }), 400
+        
+        session = SessionLocal()
+        try:
+            # Feature Gating: Check if user attended today
+            today = datetime.now().date()
+            attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if not attendance:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda harus absen terlebih dahulu untuk mengakses fitur ini'
+                }), 403
+            
+            # Get user
+            user = session.query(User).filter_by(student_id=current_user_id).first()
+            
+            if not user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User tidak ditemukan'
+                }), 404
+            
+            # Update name
+            user.name = new_name
+            session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Profil berhasil diperbarui',
+                'user': {
+                    'student_id': user.student_id,
+                    'name': user.name,
+                    'role': user.role or 'student'
+                }
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/profile: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/change-password', methods=['PUT'])
+@jwt_required()
+def change_password():
+    """
+    Change user password
+    Feature Gating: User must attend today to access
+    Requires: old_password, new_password
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        
+        data = request.get_json()
+        
+        if not data or 'old_password' not in data or 'new_password' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Password lama dan password baru harus diisi'
+            }), 400
+        
+        old_password = data['old_password']
+        new_password = data['new_password']
+        
+        if not old_password or not new_password:
+            return jsonify({
+                'status': 'error',
+                'message': 'Password tidak boleh kosong'
+            }), 400
+        
+        if len(new_password) < 6:
+            return jsonify({
+                'status': 'error',
+                'message': 'Password baru minimal 6 karakter'
+            }), 400
+        
+        session = SessionLocal()
+        try:
+            # Feature Gating: Check if user attended today
+            today = datetime.now().date()
+            attendance = session.query(Attendance).filter(
+                Attendance.student_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if not attendance:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda harus absen terlebih dahulu untuk mengakses fitur ini'
+                }), 403
+            
+            # Get user
+            user = session.query(User).filter_by(student_id=current_user_id).first()
+            
+            if not user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User tidak ditemukan'
+                }), 404
+            
+            # Verify old password
+            if not user.password:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Akun belum memiliki password'
+                }), 400
+            
+            if not bcrypt.verify(old_password, user.password):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Password lama salah'
+                }), 401
+            
+            # Update password
+            user.password = bcrypt.hash(new_password)
+            session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Password berhasil diubah'
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/change-password: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# ==================== END PROFILE & PASSWORD MANAGEMENT ====================
+
 
 # ==================== END PHASE 8 ====================
 

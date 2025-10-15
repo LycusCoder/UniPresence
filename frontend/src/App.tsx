@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Materials from './pages/Materials';
 import Assignments from './pages/Assignments';
+import Settings from './pages/Settings';
 
 function App() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -37,6 +38,10 @@ function App() {
       <Route 
         path="/assignments" 
         element={isAuthenticated ? <Assignments /> : <Navigate to="/login" replace />} 
+      />
+      <Route 
+        path="/settings" 
+        element={isAuthenticated ? <Settings /> : <Navigate to="/login" replace />} 
       />
       <Route 
         path="*" 

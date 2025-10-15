@@ -239,9 +239,9 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -251,37 +251,52 @@ function Dashboard() {
                 className="h-12 w-12 object-contain"
               />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  UniPresence - Sistem Absensi Pintar
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  UniPresence
                 </h1>
-                <p className="text-sm text-gray-600">Universitas Harkat Negeri</p>
+                <p className="text-sm text-gray-600">Sistem Absensi Pintar</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               {/* User Info */}
               <div className="text-right" data-testid="user-info">
                 <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-600">{user?.student_id} • {user?.role}</p>
+                <p className="text-xs text-gray-600">{user?.student_id} • 
+                  <span className="ml-1 font-medium text-blue-600">
+                    {user?.role === 'admin' ? '👑 Admin' : user?.role === 'komting' ? '⭐ Komting' : '👤 Student'}
+                  </span>
+                </p>
               </div>
+              
+              {/* Settings Button - Show for students only */}
+              {user?.role === 'student' && (
+                <Link
+                  to="/settings"
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 transition-all shadow-md hover:shadow-lg"
+                  data-testid="settings-button"
+                >
+                  ⚙️ Pengaturan
+                </Link>
+              )}
               
               {/* Register Button - Show for komting/admin only */}
               {(user?.role === 'admin' || user?.role === 'komting') && (
                 <button
                   onClick={() => setIsRegistering(!isRegistering)}
-                  className="px-6 py-2 bg-white text-blue-600 border border-blue-600 rounded-lg font-medium hover:bg-blue-600 hover:text-white transition-colors duration-200"
+                  className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md hover:shadow-lg"
                   data-testid="register-button"
                 >
-                  {isRegistering ? 'Batal' : 'Daftar Wajah Baru'}
+                  {isRegistering ? '✕ Batal' : '➕ Daftar Wajah Baru'}
                 </button>
               )}
               
               {/* Logout Button */}
               <button
                 onClick={logout}
-                className="px-6 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors duration-200"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors shadow-md hover:shadow-lg"
                 data-testid="logout-button"
               >
-                Logout
+                🚪 Logout
               </button>
             </div>
           </div>
@@ -312,73 +327,103 @@ function Dashboard() {
           />
         </div>
 
-        {/* Feature Gating Cards - PHASE 8 */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Feature Cards - Modern Design */}
+        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Materi Perkuliahan Card */}
-          <div className="bg-white rounded-lg shadow-md p-6 border-2 border-gray-200 hover:border-blue-400 transition-colors" data-testid="materials-card">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                  📚 Materi Perkuliahan
-                </h3>
-                <p className="text-gray-600 text-sm">
-                  Akses slide, bahan ajar, dan referensi kuliah
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all transform hover:-translate-y-1" data-testid="materials-card">
+            <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl mb-4 text-3xl shadow-lg">
+              📚
             </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Materi Perkuliahan
+            </h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Akses slide, bahan ajar, dan referensi kuliah
+            </p>
             
             {hasAttendedToday ? (
               <Link
                 to="/materials"
-                className="inline-block w-full text-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                className="inline-block w-full text-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-md hover:shadow-lg"
                 data-testid="materials-access-button"
               >
                 📖 Lihat Materi
               </Link>
             ) : (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg" data-testid="materials-locked">
-                <p className="text-orange-700 text-sm font-medium flex items-center gap-2">
-                  🔒 Absen dulu untuk mengakses materi
+              <div className="p-4 bg-orange-50 border-2 border-orange-300 rounded-xl" data-testid="materials-locked">
+                <p className="text-orange-700 text-sm font-semibold flex items-center gap-2">
+                  🔒 Absen dulu untuk mengakses
                 </p>
               </div>
             )}
           </div>
           
           {/* Jurnal Tugas Card */}
-          <div className="bg-white rounded-lg shadow-md p-6 border-2 border-gray-200 hover:border-blue-400 transition-colors" data-testid="assignments-card">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
-                  ✍️ Jurnal Tugas
-                </h3>
-                <p className="text-gray-600 text-sm">
-                  Lihat dan submit tugas perkuliahan
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all transform hover:-translate-y-1" data-testid="assignments-card">
+            <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl mb-4 text-3xl shadow-lg">
+              ✍️
             </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              Jurnal Tugas
+            </h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Lihat dan submit tugas perkuliahan
+            </p>
             
             {hasAttendedToday ? (
               <Link
                 to="/assignments"
-                className="inline-block w-full text-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                className="inline-block w-full text-center px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-md hover:shadow-lg"
                 data-testid="assignments-access-button"
               >
                 📝 Lihat Tugas
               </Link>
             ) : (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg" data-testid="assignments-locked">
-                <p className="text-orange-700 text-sm font-medium flex items-center gap-2">
-                  🔒 Absen dulu untuk mengakses tugas
+              <div className="p-4 bg-orange-50 border-2 border-orange-300 rounded-xl" data-testid="assignments-locked">
+                <p className="text-orange-700 text-sm font-semibold flex items-center gap-2">
+                  🔒 Absen dulu untuk mengakses
                 </p>
               </div>
             )}
           </div>
+
+          {/* Settings Card - For Students Only */}
+          {user?.role === 'student' && (
+            <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 hover:shadow-2xl transition-all transform hover:-translate-y-1" data-testid="settings-card">
+              <div className="flex items-center justify-center w-14 h-14 bg-gradient-to-br from-green-500 to-teal-600 rounded-2xl mb-4 text-3xl shadow-lg">
+                ⚙️
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                Pengaturan Akun
+              </h3>
+              <p className="text-gray-600 text-sm mb-4">
+                Edit profil dan ganti password
+              </p>
+              
+              {hasAttendedToday ? (
+                <Link
+                  to="/settings"
+                  className="inline-block w-full text-center px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-xl hover:from-green-700 hover:to-teal-700 transition-all font-semibold shadow-md hover:shadow-lg"
+                  data-testid="settings-access-button"
+                >
+                  🔧 Kelola Akun
+                </Link>
+              ) : (
+                <div className="p-4 bg-orange-50 border-2 border-orange-300 rounded-xl" data-testid="settings-locked">
+                  <p className="text-orange-700 text-sm font-semibold flex items-center gap-2">
+                    🔒 Absen dulu untuk mengakses
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Camera Section */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="text-3xl">📸</span>
               Kamera Real-Time
             </h2>
             
@@ -388,14 +433,14 @@ function Dashboard() {
                 autoPlay
                 playsInline
                 muted
-                className="w-full rounded-lg border-2 border-blue-600"
+                className="w-full rounded-xl border-4 border-gradient-to-r from-blue-500 to-indigo-600 shadow-lg"
               />
               <canvas ref={canvasRef} className="hidden" />
               
               {/* User Info Overlay - Show logged-in user */}
-              <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg">
-                <p className="text-sm font-semibold">{user?.name}</p>
-                <p className="text-xs text-gray-300">{user?.student_id}</p>
+              <div className="absolute top-4 left-4 bg-gradient-to-r from-blue-600 to-indigo-600 bg-opacity-90 text-white px-4 py-2 rounded-xl shadow-lg backdrop-blur-sm">
+                <p className="text-sm font-bold">{user?.name}</p>
+                <p className="text-xs text-blue-100">{user?.student_id}</p>
               </div>
               
               {/* Recognized Name Overlay */}
@@ -422,7 +467,7 @@ function Dashboard() {
                 <button
                   onClick={recognizeFace}
                   disabled={isProcessing}
-                  className="w-full px-6 py-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                   data-testid="scan-attendance-button"
                 >
                   {isProcessing ? (
@@ -433,12 +478,12 @@ function Dashboard() {
                   ) : (
                     <>
                       <span className="text-2xl">📸</span>
-                      <span>Scan Absensi</span>
+                      <span>Scan Absensi Sekarang</span>
                     </>
                   )}
                 </button>
                 <p className="text-sm text-gray-600 text-center mt-3">
-                  Klik tombol di atas untuk melakukan scan wajah dan mencatat absensi
+                  ✨ Klik tombol di atas untuk scan wajah dan catat absensi
                 </p>
               </div>
             )}
@@ -550,39 +595,41 @@ function Dashboard() {
             )}
 
             {/* Info Box */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
               <p className="text-sm text-gray-700">
-                <strong>💡 Tips:</strong> Pastikan wajah terlihat jelas dan pencahayaan cukup. 
-                Klik tombol "Scan Absensi" untuk memulai pengenalan wajah.
+                <strong className="text-blue-700">💡 Tips:</strong> Pastikan wajah terlihat jelas dan pencahayaan cukup. 
+                Klik tombol "Scan Absensi Sekarang" untuk memulai pengenalan wajah.
               </p>
             </div>
           </div>
 
           {/* Attendance Records Section */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span className="text-3xl">📋</span>
               Riwayat Absensi Hari Ini
             </h2>
             
             <div className="overflow-x-auto" data-testid="attendance-table">
               {attendanceRecords.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>Belum ada riwayat absensi</p>
+                <div className="text-center py-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
+                  <div className="text-6xl mb-4">📊</div>
+                  <p className="text-gray-500 font-medium">Belum ada riwayat absensi hari ini</p>
                 </div>
               ) : (
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-2 text-sm font-semibold text-gray-700">Nama</th>
-                      <th className="text-left py-3 px-2 text-sm font-semibold text-gray-700">NIM</th>
-                      <th className="text-left py-3 px-2 text-sm font-semibold text-gray-700">Waktu</th>
+                    <tr className="border-b-2 border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                      <th className="text-left py-4 px-4 text-sm font-bold text-gray-700">Nama</th>
+                      <th className="text-left py-4 px-4 text-sm font-bold text-gray-700">NIM</th>
+                      <th className="text-left py-4 px-4 text-sm font-bold text-gray-700">Waktu</th>
                     </tr>
                   </thead>
                   <tbody>
                     {attendanceRecords.map((record) => (
-                      <tr key={record.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-3 px-2 text-sm text-gray-900">{record.name}</td>
-                        <td className="py-3 px-2 text-sm text-gray-700">{record.student_id}</td>
+                      <tr key={record.id} className="border-b border-gray-100 hover:bg-gradient-to-r hover:from-blue-50 hover:to-indigo-50 transition-colors">
+                        <td className="py-4 px-4 text-sm font-semibold text-gray-900">{record.name}</td>
+                        <td className="py-4 px-4 text-sm text-gray-700">{record.student_id}</td>
                         <td className="py-3 px-2 text-sm text-gray-600">{formatTimestamp(record.timestamp)}</td>
                       </tr>
                     ))}
