@@ -1,13 +1,13 @@
-"""Seed script to create initial admin and komting accounts"""
+"""Seed script to create initial admin, manager, and employee accounts"""
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base, User
+from models import Base, Employee
 from passlib.hash import bcrypt
 import os
 import numpy as np
 
 def create_seed_accounts():
-    """Create initial admin and komting accounts with dummy face encodings"""
+    """Create initial admin, manager, and employee accounts with dummy face encodings"""
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     INSTANCE_DIR = os.path.join(BASE_DIR, 'instance')
     os.makedirs(INSTANCE_DIR, exist_ok=True)
@@ -22,48 +22,85 @@ def create_seed_accounts():
     session = SessionLocal()
     
     try:
-        # Check if accounts already exist
-        admin_exists = session.query(User).filter_by(student_id='ADMIN001').first()
-        komting_exists = session.query(User).filter_by(student_id='KOMTING001').first()
-        
         # Create dummy face encoding (128-dimensional zero vector)
         dummy_encoding = np.zeros(128, dtype=np.float64)
         
-        if not admin_exists:
-            admin = User(
-                name='Administrator',
-                student_id='ADMIN001',
-                password=bcrypt.hash('admin123'),  # Default password: admin123
-                role='admin',
-                face_encoding=dummy_encoding.tobytes()
-            )
-            session.add(admin)
-            print("✓ Admin account created: ADMIN001 / admin123")
-        else:
-            print("ℹ Admin account already exists")
+        # Seed accounts data
+        seed_accounts = [
+            {
+                'employee_id': 'EMP001',
+                'name': 'System Administrator',
+                'email': 'admin@company.com',
+                'phone': '081234567890',
+                'department': 'IT',
+                'position': 'System Administrator',
+                'password': 'admin123',
+                'role': 'admin'
+            },
+            {
+                'employee_id': 'EMP002',
+                'name': 'HR Manager',
+                'email': 'manager@company.com',
+                'phone': '081234567891',
+                'department': 'Human Resources',
+                'position': 'HR Manager',
+                'password': 'manager123',
+                'role': 'manager'
+            },
+            {
+                'employee_id': 'EMP003',
+                'name': 'John Doe',
+                'email': 'john.doe@company.com',
+                'phone': '081234567892',
+                'department': 'Engineering',
+                'position': 'Software Engineer',
+                'password': 'employee123',
+                'role': 'employee'
+            }
+        ]
         
-        if not komting_exists:
-            komting = User(
-                name='Ketua Komting',
-                student_id='KOMTING001',
-                password=bcrypt.hash('komting123'),  # Default password: komting123
-                role='komting',
-                face_encoding=dummy_encoding.tobytes()
-            )
-            session.add(komting)
-            print("✓ Komting account created: KOMTING001 / komting123")
-        else:
-            print("ℹ Komting account already exists")
+        created_count = 0
+        for account_data in seed_accounts:
+            # Check if account already exists
+            existing = session.query(Employee).filter_by(employee_id=account_data['employee_id']).first()
+            
+            if not existing:
+                employee = Employee(
+                    employee_id=account_data['employee_id'],
+                    name=account_data['name'],
+                    email=account_data['email'],
+                    phone=account_data['phone'],
+                    department=account_data['department'],
+                    position=account_data['position'],
+                    password=bcrypt.hash(account_data['password']),
+                    role=account_data['role'],
+                    face_encoding=dummy_encoding.tobytes(),
+                    is_active=True
+                )
+                session.add(employee)
+                print(f"✓ {account_data['role'].title()} account created: {account_data['employee_id']} / {account_data['password']}")
+                created_count += 1
+            else:
+                print(f"ℹ {account_data['role'].title()} account already exists: {account_data['employee_id']}")
         
         session.commit()
-        print("\n✅ Seed completed successfully!")
-        print("\nDefault Accounts:")
-        print("  Admin:   ADMIN001 / admin123")
-        print("  Komting: KOMTING001 / komting123")
+        
+        if created_count > 0:
+            print(f"\n✅ Seed completed successfully! Created {created_count} new account(s).")
+        else:
+            print("\n✅ All seed accounts already exist.")
+            
+        print("\n📋 Default Accounts:")
+        print("  Admin:    EMP001 / admin123")
+        print("  Manager:  EMP002 / manager123")
+        print("  Employee: EMP003 / employee123")
+        print("\n🔐 Please change these default passwords in production!")
         
     except Exception as e:
         session.rollback()
         print(f"❌ Error during seeding: {str(e)}")
+        import traceback
+        traceback.print_exc()
     finally:
         session.close()
 
