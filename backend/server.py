@@ -37,6 +37,7 @@ from models import Base, Employee, Attendance
 from utils.i18n import translate, get_user_language
 from utils.date_formatter import format_datetime
 from utils.validators import validate_employee_id, validate_email, validate_password, validate_name
+from utils.face_detection import analyze_face_quality, enhance_image_for_recognition
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -242,7 +243,87 @@ def get_current_user():
             'message': translate('server_error', 'id')
         }), 500
 
-# ==================== FACE REGISTRATION ====================
+# ==================== FACE QUALITY CHECK & REGISTRATION ====================
+
+@app.route('/api/face/analyze', methods=['POST'])
+@jwt_required()
+def analyze_face():
+    """
+    Analyze face quality including mask detection
+    Returns quality metrics without saving
+    """
+    try:
+        claims = get_jwt()
+        lang = claims.get('language', 'id')
+        
+        data = request.get_json()
+        
+        if not data or 'image' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': translate('invalid_input', lang)
+            }), 400
+        
+        image_base64 = data['image']
+        check_mask = data.get('check_mask', True)
+        
+        # Decode image
+        img_array, decode_error = decode_base64_image(image_base64)
+        if img_array is None:
+            return jsonify({
+                'status': 'error',
+                'message': f'Gagal memproses gambar: {decode_error}'
+            }), 400
+        
+        # Detect face
+        face_locations = face_recognition.face_locations(img_array, model=config.FACE_DETECTION_MODEL)
+        
+        if len(face_locations) == 0:
+            return jsonify({
+                'status': 'error',
+                'message': translate('face_not_detected', lang),
+                'quality_score': 0,
+                'is_acceptable': False
+            }), 200
+        
+        if len(face_locations) > 1:
+            return jsonify({
+                'status': 'error',
+                'message': translate('multiple_faces', lang),
+                'quality_score': 0,
+                'is_acceptable': False
+            }), 200
+        
+        # Analyze face quality
+        quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=check_mask)
+        
+        return jsonify({
+            'status': 'success' if quality_result['is_acceptable'] else 'warning',
+            'message': quality_result['recommendation'],
+            'quality_metrics': {
+                'overall_score': quality_result['quality_score'],
+                'blur_score': quality_result['blur_score'],
+                'brightness_score': quality_result['brightness_score'],
+                'size_score': quality_result['size_score'],
+                'angle_score': quality_result['angle_score'],
+                'face_dimensions': quality_result['face_dimensions']
+            },
+            'mask_detection': {
+                'detected': quality_result['mask_detected'],
+                'confidence': quality_result['mask_confidence'],
+                'reason': quality_result['mask_reason']
+            },
+            'is_acceptable': quality_result['is_acceptable'],
+            'recommendation': quality_result['recommendation']
+        }), 200
+    
+    except Exception as e:
+        print(f"Error in /api/face/analyze: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': translate('server_error', lang)
+        }), 500
 
 @app.route('/api/register', methods=['POST'])
 @jwt_required()
@@ -333,6 +414,27 @@ def register():
             return jsonify({
                 'status': 'error',
                 'message': translate('multiple_faces', lang)
+            }), 400
+        
+        # Analyze face quality including mask detection
+        quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=True)
+        
+        # Check if quality is acceptable
+        if not quality_result['is_acceptable']:
+            return jsonify({
+                'status': 'error',
+                'message': quality_result['recommendation'],
+                'quality_score': quality_result['quality_score'],
+                'mask_detected': quality_result['mask_detected']
+            }), 400
+        
+        # Warn if mask is detected
+        if quality_result['mask_detected']:
+            return jsonify({
+                'status': 'error',
+                'message': '⚠️ Masker terdeteksi! Harap lepas masker untuk registrasi wajah.',
+                'mask_detected': True,
+                'mask_confidence': quality_result['mask_confidence']
             }), 400
         
         # Extract face encoding
@@ -447,6 +549,24 @@ def recognize():
                 'detected': False
             }), 200
         
+        # Check face quality and mask detection
+        quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=True)
+        
+        # If mask detected, reject immediately
+        if quality_result['mask_detected']:
+            return jsonify({
+                'status': 'error',
+                'message': '⚠️ Masker terdeteksi! Harap lepas masker untuk verifikasi absensi.',
+                'detected': False,
+                'mask_detected': True,
+                'mask_confidence': quality_result['mask_confidence']
+            }), 200
+        
+        # Warn about low quality (but don't block)
+        quality_warnings = []
+        if quality_result['quality_score'] < 70:
+            quality_warnings.append(quality_result['recommendation'])
+        
         # Extract face encoding
         face_encodings = face_recognition.face_encodings(img_array, face_locations)
         
@@ -527,14 +647,19 @@ def recognize():
             session.add(new_attendance)
             session.commit()
             
+            response_message = translate('attendance_marked', lang) + f' Selamat datang, {current_employee.name}!'
+            if quality_warnings:
+                response_message += f' | ⚠️ {quality_warnings[0]}'
+            
             return jsonify({
                 'status': 'success',
-                'message': translate('attendance_marked', lang) + f' Selamat datang, {current_employee.name}!',
+                'message': response_message,
                 'name': current_employee.name,
                 'employee_id': current_employee.employee_id,
                 'already_marked': False,
                 'detected': True,
                 'confidence': float(1 - face_distance[0]),
+                'quality_score': quality_result['quality_score'],
                 'timestamp': datetime.now().isoformat()
             }), 200
         
