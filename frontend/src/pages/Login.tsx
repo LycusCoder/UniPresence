@@ -6,7 +6,7 @@ interface LoginProps {
 }
 
 const Login = ({ onLoginSuccess }: LoginProps) => {
-  const [studentId, setStudentId] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,14 +16,14 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
     e.preventDefault();
     setError('');
     
-    if (!studentId.trim() || !password.trim()) {
-      setError('NIM dan password harus diisi');
+    if (!employeeId.trim() || !password.trim()) {
+      setError('NIP dan password harus diisi');
       return;
     }
 
     setLoading(true);
     try {
-      await login(studentId, password);
+      await login(employeeId, password);
       onLoginSuccess();
     } catch (err: any) {
       setError(err.message || 'Login gagal. Silakan coba lagi.');
@@ -33,22 +33,20 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         {/* Logo and Title */}
         <div className="text-center mb-8">
           <div className="inline-block p-4 bg-white rounded-2xl shadow-lg mb-4">
-            <img 
-              src="https://customer-assets.emergentagent.com/job_smartface-attend-1/artifacts/d59f7jnx_image.png" 
-              alt="Logo Universitas" 
-              className="h-16 w-16 object-contain"
-            />
+            <div className="h-16 w-16 bg-gradient-to-br from-red-600 to-red-800 rounded-xl flex items-center justify-center">
+              <span className="text-3xl font-bold text-white">UP</span>
+            </div>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            UniPresence
+            UniPresence Enterprise
           </h1>
           <p className="text-gray-600">
-            Sistem Absensi Berbasis Face Recognition
+            Sistem Manajemen Karyawan
           </p>
         </div>
 
@@ -64,7 +62,7 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
               data-testid="error-message"
             >
               <div className="flex items-center">
-                <span className="text-xl mr-2">!</span>
+                <span className="text-xl mr-2">⚠️</span>
                 <span>{error}</span>
               </div>
             </div>
@@ -73,19 +71,19 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label 
-                htmlFor="studentId" 
+                htmlFor="employeeId" 
                 className="block text-sm font-medium text-gray-700 mb-2"
               >
-                NIM
+                NIP (Nomor Induk Pegawai)
               </label>
               <input
-                id="studentId"
+                id="employeeId"
                 type="text"
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="Masukkan NIM"
-                data-testid="login-student-id-input"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all"
+                placeholder="Masukkan NIP (contoh: EMP001)"
+                data-testid="login-employee-id-input"
                 disabled={loading}
               />
             </div>
@@ -102,7 +100,7 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition-all"
                 placeholder="Masukkan password"
                 data-testid="login-password-input"
                 disabled={loading}
@@ -112,7 +110,7 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg font-medium hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               data-testid="login-submit-button"
             >
               {loading ? 'Memproses...' : 'Login'}
@@ -120,11 +118,12 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
           </form>
 
           {/* Test Accounts Info */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <p className="text-xs font-semibold text-gray-700 mb-2">Akun Test:</p>
+          <div className="mt-6 p-4 bg-red-50 rounded-lg border border-red-200">
+            <p className="text-xs font-semibold text-gray-700 mb-2">👤 Akun Test:</p>
             <div className="space-y-1 text-xs text-gray-600">
-              <p><strong>Admin:</strong> ADMIN001 / admin123</p>
-              <p><strong>Komting:</strong> KOMTING001 / komting123</p>
+              <p><strong>Admin:</strong> EMP001 / admin123</p>
+              <p><strong>Manajer:</strong> EMP002 / manager123</p>
+              <p><strong>Karyawan:</strong> EMP003 / employee123</p>
             </div>
           </div>
         </div>

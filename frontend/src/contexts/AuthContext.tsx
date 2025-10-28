@@ -4,16 +4,23 @@ import axios from 'axios';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
 
 interface User {
-  student_id: string;
+  employee_id: string;
   name: string;
+  email?: string;
+  phone?: string;
+  department?: string;
+  position?: string;
   role: string;
+  language?: string;
+  theme?: string;
+  date_format?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (studentId: string, password: string) => Promise<void>;
+  login: (employeeId: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -39,10 +46,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(false);
   }, []);
 
-  const login = async (studentId: string, password: string) => {
+  const login = async (employeeId: string, password: string) => {
     try {
       const response = await axios.post(`${BACKEND_URL}/api/login`, {
-        student_id: studentId,
+        employee_id: employeeId,
         password: password
       });
 
