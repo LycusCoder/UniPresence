@@ -38,6 +38,13 @@ from utils.i18n import translate, get_user_language
 from utils.date_formatter import format_datetime
 from utils.validators import validate_employee_id, validate_email, validate_password, validate_name
 from utils.face_detection import analyze_face_quality, enhance_image_for_recognition
+from utils.mask_detection_cv import detect_mask_opencv  # NEW: Improved mask detection
+from utils.qrcode_generator import (  # NEW: QR code system
+    generate_employee_qr_code, 
+    validate_qr_code, 
+    get_cached_qr_code, 
+    cache_qr_code
+)
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -285,8 +292,17 @@ def analyze_face():
                 'is_acceptable': False
             }), 200
         
-        # Analyze face quality
+        # Analyze face quality (using improved mask detection)
         quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=check_mask)
+        
+        # PHASE 3: Use improved OpenCV mask detection
+        if check_mask:
+            mask_result_cv = detect_mask_opencv(img_array, face_locations[0])
+            # Override with more accurate OpenCV detection
+            if mask_result_cv['mask_detected'] and mask_result_cv['confidence'] > 70:
+                quality_result['mask_detected'] = True
+                quality_result['mask_confidence'] = mask_result_cv['confidence']
+                quality_result['mask_reason'] = mask_result_cv['reason']
         
         return jsonify({
             'status': 'success' if quality_result['is_acceptable'] else 'warning',
@@ -1305,6 +1321,195 @@ def get_assignments():
             'status': 'error',
             'message': translate('server_error', 'id')
         }), 500
+
+# ==================== QR CODE ENDPOINTS (NEW - PHASE 3) ====================
+
+@app.route('/api/employee/qrcode/<employee_id>', methods=['GET'])
+@jwt_required()
+def get_employee_qr_code(employee_id: str):
+    """
+    Generate QR code for employee e-card
+    Returns base64 encoded QR code image
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        claims = get_jwt()
+        lang = claims.get('language', 'id')
+        user_role = claims.get('role')
+        
+        session = SessionLocal()
+        try:
+            # Check if user can access this QR code
+            # Users can only get their own QR code, unless they're admin/manager
+            if employee_id != current_user_id and user_role not in ['admin', 'manager']:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Anda hanya bisa mengakses QR code Anda sendiri'
+                }), 403
+            
+            # Get employee data
+            employee = session.query(Employee).filter_by(employee_id=employee_id).first()
+            
+            if not employee:
+                return jsonify({
+                    'status': 'error',
+                    'message': translate('employee_not_found', lang)
+                }), 404
+            
+            # Check cache first
+            cached_qr = get_cached_qr_code(employee_id, employee.name, cache_minutes=60)
+            
+            if cached_qr:
+                qr_base64, metadata = cached_qr
+            else:
+                # Generate new QR code
+                qr_base64, metadata = generate_employee_qr_code(
+                    employee_id=employee_id,
+                    employee_name=employee.name,
+                    include_timestamp=True,  # Include timestamp for security
+                    size=300,
+                    border=2
+                )
+                
+                # Cache it
+                cache_qr_code(employee_id, employee.name, (qr_base64, metadata))
+            
+            return jsonify({
+                'status': 'success',
+                'qr_code': f'data:image/png;base64,{qr_base64}',
+                'metadata': metadata,
+                'employee': {
+                    'employee_id': employee.employee_id,
+                    'name': employee.name,
+                    'department': employee.department,
+                    'position': employee.position
+                }
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/employee/qrcode: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': translate('server_error', 'id')
+        }), 500
+
+
+@app.route('/api/attendance/qr', methods=['POST'])
+@jwt_required()
+def mark_attendance_qr():
+    """
+    Mark attendance using QR code scan
+    Validates QR code and marks attendance
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        claims = get_jwt()
+        lang = claims.get('language', 'id')
+        
+        data = request.get_json()
+        
+        if not data or 'qr_data' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'QR code data tidak ditemukan'
+            }), 400
+        
+        qr_data = data['qr_data']
+        
+        # Validate QR code
+        validation_result = validate_qr_code(qr_data, max_age_hours=24)  # QR valid for 24 hours
+        
+        if not validation_result.get('valid'):
+            return jsonify({
+                'status': 'error',
+                'message': validation_result.get('error', 'QR code tidak valid'),
+                'detected': False
+            }), 400
+        
+        scanned_employee_id = validation_result['employee_id']
+        
+        # Verify that scanned employee_id matches logged-in user
+        if scanned_employee_id != current_user_id:
+            return jsonify({
+                'status': 'error',
+                'message': f'QR code ini milik {scanned_employee_id}. Anda harus scan QR code Anda sendiri!',
+                'detected': False
+            }), 403
+        
+        session = SessionLocal()
+        try:
+            # Get employee
+            employee = session.query(Employee).filter_by(employee_id=current_user_id).first()
+            
+            if not employee:
+                return jsonify({
+                    'status': 'error',
+                    'message': translate('employee_not_found', lang),
+                    'detected': False
+                }), 404
+            
+            # Check if already marked attendance today
+            today = datetime.now().date()
+            existing_attendance = session.query(Attendance).filter(
+                Attendance.employee_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            if existing_attendance:
+                return jsonify({
+                    'status': 'success',
+                    'message': translate('attendance_already_marked', lang),
+                    'name': employee.name,
+                    'employee_id': employee.employee_id,
+                    'already_marked': True,
+                    'detected': True,
+                    'method': 'qr_code'
+                }), 200
+            
+            # Mark attendance via QR code
+            new_attendance = Attendance(
+                employee_id=current_user_id,
+                check_in_type='qr_code',  # NEW: QR code method
+                confidence_score=100,  # QR code has 100% confidence
+                notes='Absensi menggunakan QR Code'
+            )
+            session.add(new_attendance)
+            session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'✅ Absensi berhasil dicatat! Selamat datang, {employee.name}!',
+                'name': employee.name,
+                'employee_id': employee.employee_id,
+                'already_marked': False,
+                'detected': True,
+                'method': 'qr_code',
+                'timestamp': datetime.now().isoformat()
+            }), 200
+        
+        except Exception as e:
+            session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f'Error: {str(e)}',
+                'detected': False
+            }), 500
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/attendance/qr: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': translate('server_error', 'id'),
+            'detected': False
+        }), 500
+
 
 if __name__ == '__main__':
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)

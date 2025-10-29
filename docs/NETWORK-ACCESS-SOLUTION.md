@@ -49,7 +49,7 @@ DANGEROUSLY_DISABLE_HOST_CHECK=true
 ### **Option 1: Emergentagent Preview URL**
 URL Preview sudah otomatis accessible dari mana saja:
 ```
-https://facetrack-12.preview.emergentagent.com
+https://qrcode-ecard-system.preview.emergentagent.com
 ```
 
 **Benefit:**
@@ -162,7 +162,7 @@ sudo supervisorctl status frontend
 ### **Scenario 2: Demo ke Dosen/Mahasiswa (Remote)**
 **Setup:**
 1. Use Emergentagent preview URL
-2. Share: `https://facetrack-12.preview.emergentagent.com`
+2. Share: `https://qrcode-ecard-system.preview.emergentagent.com`
 3. ✅ Works everywhere! Camera works on mobile too!
 
 ### **Scenario 3: Offline Demo (No Internet)**
