@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# 🚀 UNIPRESENCE SERVICE LAUNCHER v5.0 - SMART & ALWAYS FRESH
+# 🚀 UNIPRESENCE SERVICE LAUNCHER v6.0 - NGROK V3 + SMART CORS
 # =============================================================================
 
 # ====================================================================
@@ -24,7 +24,9 @@ USE_CONDA=false
 
 # Ngrok Configuration
 USE_NGROK=false
-NGROK_BACKEND_PORT=8001
+NGROK_CONFIG_PATH="$HOME/.config/ngrok/ngrok.yml"
+NGROK_BACKEND_URL=""
+NGROK_FRONTEND_URL=""
 
 # Warna untuk output
 RED='\033[0;31m'
@@ -76,6 +78,7 @@ cleanup_on_exit() {
     # Restore .env if using ngrok
     if [ "$USE_NGROK" = true ]; then
         restore_frontend_env
+        restore_backend_env
     fi
     
     print_success "Cleanup complete. Goodbye!"
@@ -219,7 +222,7 @@ install_frontend_deps() {
 ask_ngrok_usage() {
     echo ""
     print_header "🌐 NGROK NETWORK EXPOSURE"
-    echo -e "${CYAN}Apakah Anda ingin mengaktifkan Ngrok?${NC}"
+    echo -e "${CYAN}Apakah Anda ingin mengaktifkan Ngrok v3?${NC}"
     echo ""
     echo "  1. ✅ Ya - Aktifkan Ngrok (Internet Access)"
     echo "  2. ❌ Tidak - Lokal saja"
@@ -236,7 +239,7 @@ ask_ngrok_usage() {
 }
 
 # ====================================================================
-# 6. FUNGSI: CHECK NGROK
+# 6. FUNGSI: CHECK NGROK V3
 # ====================================================================
 
 check_ngrok_installation() {
@@ -248,21 +251,21 @@ check_ngrok_installation() {
         return 1
     fi
     
-    # Check authtoken (ngrok v3+ uses different config path)
-    if [ ! -f "$HOME/.config/ngrok/ngrok.yml" ] && [ ! -f "$HOME/.ngrok2/ngrok.yml" ] && [ ! -f "$HOME/snap/ngrok/*/\.config/ngrok/ngrok.yml" ]; then
-        print_warning "Ngrok authtoken belum dikonfigurasi!"
-        print_info "Setup: ngrok config add-authtoken YOUR_TOKEN"
-        print_warning "Melanjutkan tanpa Ngrok..."
+    # Check if config file exists
+    if [ ! -f "$NGROK_CONFIG_PATH" ]; then
+        print_warning "Ngrok config tidak ditemukan di: $NGROK_CONFIG_PATH"
+        print_info "Buat config dengan: ngrok config edit"
+        print_info "Atau set NGROK_CONFIG_PATH jika config di tempat lain"
         USE_NGROK=false
         return 1
     fi
-    
-    print_success "Ngrok siap digunakan!"
+
+    print_success "Ngrok v3 siap digunakan! (config: $NGROK_CONFIG_PATH)"
     return 0
 }
 
 # ====================================================================
-# 7. FUNGSI: KILL EXISTING SERVICES (IMPROVED WITH PID FILES)
+# 7. FUNGSI: KILL EXISTING SERVICES
 # ====================================================================
 
 kill_existing_services() {
@@ -303,6 +306,7 @@ kill_existing_services() {
     pkill -9 -f "server.py" 2>/dev/null
     pkill -9 -f "vite" 2>/dev/null
     pkill -9 -f "yarn dev" 2>/dev/null
+    pkill -9 -f "ngrok start" 2>/dev/null
     pkill -9 -f "ngrok http" 2>/dev/null
     
     # Step 3: Kill by port (most aggressive)
@@ -402,34 +406,77 @@ start_frontend() {
 }
 
 start_ngrok() {
-    print_header "🌐 STARTING NGROK"
+    print_header "🌐 STARTING NGROK V3"
+
+    print_info "Menjalankan semua tunnel dari config YAML..."
+    print_info "Config path: $NGROK_CONFIG_PATH"
     
-    print_info "Starting tunnel for port $NGROK_BACKEND_PORT..."
-    ngrok http $NGROK_BACKEND_PORT --log=stdout > "$NGROK_LOG" 2>&1 &
+    # Start ngrok with --all flag to start all tunnels in config
+    ngrok start --all --config "$NGROK_CONFIG_PATH" --log=stdout > "$NGROK_LOG" 2>&1 &
     NGROK_PID=$!
-    
-    # Save PID to file
     echo "$NGROK_PID" > "$NGROK_PID_FILE"
-    
-    # Wait for ngrok to initialize
-    sleep 6
-    
-    # Get public URL from API
-    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o '"public_url":"https://[^"]*' | head -1 | cut -d'"' -f4)
-    
-    if [ -z "$NGROK_URL" ]; then
-        print_warning "Tidak dapat mendapatkan Ngrok URL"
-        print_info "Cek dashboard: http://localhost:4040"
+
+    print_info "Waiting for ngrok to initialize..."
+    sleep 8
+
+    # Verify ngrok is running
+    if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+        print_error "Ngrok failed to start! Check log: $NGROK_LOG"
+        tail -20 "$NGROK_LOG"
         return 1
-    else
-        print_success "Ngrok Backend URL: $NGROK_URL"
-        print_info "PID saved to: $NGROK_PID_FILE"
-        
-        # Update frontend .env to use ngrok URL
-        update_frontend_env_for_ngrok "$NGROK_URL"
     fi
+
+    # Get tunnel URLs from ngrok API
+    print_info "Fetching tunnel URLs from ngrok API..."
+    TUNNEL_DATA=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null)
     
-    print_info "Dashboard: http://localhost:4040"
+    if [ -z "$TUNNEL_DATA" ]; then
+        print_warning "Tidak bisa mendapatkan Ngrok URLs dari API!"
+        print_info "Buka dashboard manual: http://localhost:4040"
+        return 1
+    fi
+
+    # Parse URLs for backend (8001) and frontend (3000)
+    # Try to match by port first, then by name
+    NGROK_BACKEND_URL=$(echo "$TUNNEL_DATA" | grep -o '"public_url":"https://[^"]*' | grep -o 'https://[^"]*' | while read url; do
+        if echo "$TUNNEL_DATA" | grep -A5 "$url" | grep -q '"addr":".*:8001"'; then
+            echo "$url"
+            break
+        fi
+    done)
+    
+    NGROK_FRONTEND_URL=$(echo "$TUNNEL_DATA" | grep -o '"public_url":"https://[^"]*' | grep -o 'https://[^"]*' | while read url; do
+        if echo "$TUNNEL_DATA" | grep -A5 "$url" | grep -q '"addr":".*:3000"'; then
+            echo "$url"
+            break
+        fi
+    done)
+
+    # Fallback: just take first two HTTPS URLs if port matching fails
+    if [ -z "$NGROK_BACKEND_URL" ] || [ -z "$NGROK_FRONTEND_URL" ]; then
+        print_warning "Port-based matching failed, using fallback..."
+        URLS=($(echo "$TUNNEL_DATA" | grep -o '"public_url":"https://[^"]*' | grep -o 'https://[^"]*'))
+        NGROK_BACKEND_URL="${URLS[0]}"
+        NGROK_FRONTEND_URL="${URLS[1]}"
+    fi
+
+    if [ -z "$NGROK_BACKEND_URL" ]; then
+        print_error "Tidak bisa mendapatkan Backend Ngrok URL!"
+        print_info "Buka dashboard manual: http://localhost:4040"
+        return 1
+    fi
+
+    print_success "✅ Backend Ngrok URL: $NGROK_BACKEND_URL"
+    if [ ! -z "$NGROK_FRONTEND_URL" ]; then
+        print_success "✅ Frontend Ngrok URL: $NGROK_FRONTEND_URL"
+    fi
+    print_info "📊 Dashboard: http://localhost:4040"
+
+    # Update frontend .env to use ngrok backend URL
+    update_frontend_env_for_ngrok "$NGROK_BACKEND_URL"
+    
+    # Update backend .env to allow ngrok CORS
+    update_backend_env_for_ngrok "$NGROK_BACKEND_URL" "$NGROK_FRONTEND_URL"
 }
 
 update_frontend_env_for_ngrok() {
@@ -461,6 +508,44 @@ update_frontend_env_for_ngrok() {
     
     # Restart frontend to apply new env
     restart_frontend_for_ngrok
+}
+
+update_backend_env_for_ngrok() {
+    local BACKEND_URL=$1
+    local FRONTEND_URL=$2
+    
+    print_info "Updating backend .env untuk allow Ngrok CORS..."
+    
+    # Backup original backend .env
+    if [ -f "./backend/.env" ]; then
+        cp ./backend/.env ./backend/.env.backup
+        print_info "Backup backend/.env → backend/.env.backup"
+    fi
+    
+    # Add NGROK_BACKEND_URL and NGROK_FRONTEND_URL to backend .env
+    if [ ! -z "$BACKEND_URL" ]; then
+        if grep -q "NGROK_BACKEND_URL" ./backend/.env 2>/dev/null; then
+            sed -i.tmp "s|NGROK_BACKEND_URL=.*|NGROK_BACKEND_URL=$BACKEND_URL|g" ./backend/.env
+            rm -f ./backend/.env.tmp
+        else
+            echo "NGROK_BACKEND_URL=$BACKEND_URL" >> ./backend/.env
+        fi
+    fi
+    
+    if [ ! -z "$FRONTEND_URL" ]; then
+        if grep -q "NGROK_FRONTEND_URL" ./backend/.env 2>/dev/null; then
+            sed -i.tmp "s|NGROK_FRONTEND_URL=.*|NGROK_FRONTEND_URL=$FRONTEND_URL|g" ./backend/.env
+            rm -f ./backend/.env.tmp
+        else
+            echo "NGROK_FRONTEND_URL=$FRONTEND_URL" >> ./backend/.env
+        fi
+    fi
+    
+    print_success "Backend .env updated dengan Ngrok URLs"
+    print_warning "Backend perlu direstart untuk apply CORS changes..."
+    
+    # Restart backend to apply new CORS settings
+    restart_backend_for_ngrok
 }
 
 restart_frontend_for_ngrok() {
@@ -506,6 +591,42 @@ restart_frontend_for_ngrok() {
     fi
 }
 
+restart_backend_for_ngrok() {
+    print_info "Restarting backend untuk apply Ngrok CORS..."
+    
+    # Kill existing backend using saved PID
+    if [ -f "$BACKEND_PID_FILE" ]; then
+        SAVED_PID=$(cat "$BACKEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_PID" ]; then
+            kill $SAVED_PID 2>/dev/null
+            print_info "Stopped old backend (PID: $SAVED_PID)"
+        fi
+        rm -f "$BACKEND_PID_FILE"
+    fi
+    
+    # Wait for port to be released
+    sleep 2
+    
+    # Restart backend
+    cd backend
+    $PYTHON_CMD server.py > "$BACKEND_LOG" 2>&1 &
+    BACKEND_PID=$!
+    cd ..
+    
+    # Save new PID
+    echo "$BACKEND_PID" > "$BACKEND_PID_FILE"
+    
+    sleep 3
+    
+    if [ -z "$BACKEND_PID" ] || ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        print_error "Backend restart GAGAL!"
+        tail -20 "$BACKEND_LOG"
+        exit 1
+    else
+        print_success "Backend restarted dengan Ngrok CORS support!"
+    fi
+}
+
 restore_frontend_env() {
     # Fungsi untuk restore .env ke localhost (dipanggil saat exit)
     if [ -f "./frontend/.env.backup" ]; then
@@ -515,11 +636,20 @@ restore_frontend_env() {
     fi
 }
 
+restore_backend_env() {
+    # Fungsi untuk restore backend .env (dipanggil saat exit)
+    if [ -f "./backend/.env.backup" ]; then
+        print_info "Restoring backend .env..."
+        mv ./backend/.env.backup ./backend/.env
+        print_success "backend/.env restored!"
+    fi
+}
+
 # ====================================================================
 # 9. MAIN EXECUTION
 # ====================================================================
 
-print_header "🚀 UNIPRESENCE LAUNCHER v5.0"
+print_header "🚀 UNIPRESENCE LAUNCHER v6.0 - NGROK V3 READY"
 
 # Step 1: Detect Python
 detect_python_env
@@ -557,20 +687,21 @@ print_header "✨ ALL SYSTEMS RUNNING"
 
 echo -e "${GREEN}🔗 Local Access:${NC}"
 echo -e "   Backend:  ${CYAN}http://localhost:8001${NC}"
+echo -e "   Frontend: ${CYAN}http://localhost:3000${NC}"
 
-if [ "$USE_NGROK" = true ] && [ ! -z "$NGROK_URL" ]; then
-    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC} ${YELLOW}(using Ngrok backend)${NC}"
+if [ "$USE_NGROK" = true ] && [ ! -z "$NGROK_BACKEND_URL" ]; then
     echo ""
-    echo -e "${GREEN}🌍 Internet Access (Ngrok):${NC}"
-    echo -e "   Backend:  ${PURPLE}$NGROK_URL${NC}"
-    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC}"
+    echo -e "${GREEN}🌍 Internet Access (Ngrok v3):${NC}"
+    echo -e "   Backend:  ${PURPLE}$NGROK_BACKEND_URL${NC}"
+    if [ ! -z "$NGROK_FRONTEND_URL" ]; then
+        echo -e "   Frontend: ${PURPLE}$NGROK_FRONTEND_URL${NC}"
+    fi
     echo -e "   Dashboard: ${CYAN}http://localhost:4040${NC}"
     echo ""
     echo -e "${YELLOW}⚠️  PENTING:${NC}"
-    echo -e "   Frontend sudah dikonfigurasi untuk menggunakan Ngrok backend"
-    echo -e "   Akses dari browser manapun akan aman dan terhubung via HTTPS"
-else
-    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC}"
+    echo -e "   ✅ Frontend sudah dikonfigurasi untuk menggunakan Ngrok backend"
+    echo -e "   ✅ Backend CORS sudah allow Ngrok URLs"
+    echo -e "   ✅ Share URL Ngrok ke teman-teman untuk testing!"
 fi
 
 echo ""
@@ -584,7 +715,8 @@ fi
 echo ""
 print_header "🎉 READY TO GO!"
 if [ "$USE_NGROK" = true ]; then
-    echo -e "${GREEN}Share URL Ngrok untuk akses dari internet!${NC}"
+    echo -e "${GREEN}🚀 Aplikasi siap diakses dari internet via Ngrok!${NC}"
+    echo -e "${GREEN}👥 Teman-teman bisa akses menggunakan URL Ngrok di atas${NC}"
 fi
 echo -e "${CYAN}Tekan Ctrl+C untuk stop dan restore config${NC}"
 echo ""
