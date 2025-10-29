@@ -44,6 +44,7 @@ function Dashboard() {
   // Attendance page states
   const [isRegistering, setIsRegistering] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [isCameraLoading, setIsCameraLoading] = useState(false);
   const [name, setName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
@@ -88,33 +89,215 @@ function Dashboard() {
   };
 
   const startCamera = async () => {
+    console.log('🎥 [Camera] Starting camera initialization...');
+    console.log('🎥 [Camera] User:', user?.name, '| Employee ID:', user?.employee_id);
+    console.log('🎥 [Camera] Current URL:', window.location.href);
+    console.log('🎥 [Camera] Protocol:', window.location.protocol);
+    
+    setIsCameraLoading(true);
+    
+    // Check if mediaDevices is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error('❌ [Camera] getUserMedia not supported in this browser');
+      setIsCameraLoading(false);
+      showMessage('Browser Anda tidak mendukung akses kamera. Gunakan browser modern seperti Chrome atau Firefox.', 'error');
+      return;
+    }
+
+    // Check HTTPS requirement for network access
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' ||
+                        window.location.hostname === '';
+    const isHttps = window.location.protocol === 'https:';
+    
+    if (!isLocalhost && !isHttps) {
+      console.warn('⚠️ [Camera] Camera access from network requires HTTPS!');
+      console.warn('⚠️ [Camera] Current protocol:', window.location.protocol);
+      console.warn('⚠️ [Camera] Try accessing via localhost instead of IP address');
+      showMessage('⚠️ Akses kamera via network memerlukan HTTPS. Gunakan https:// atau akses via localhost.', 'error');
+      setIsCameraLoading(false);
+      return;
+    }
+
     try {
+      console.log('🎥 [Camera] Requesting camera permission...');
+      
+      // Stop any existing stream first
+      stopCamera();
+      
+      // Wait a bit for cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        }
       });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraOn(true);
-        // Start quality checking after camera is on
-        startQualityChecking();
+      
+      console.log('✅ [Camera] Camera permission granted');
+      console.log('✅ [Camera] Stream obtained:', stream.id);
+      console.log('✅ [Camera] Video tracks:', stream.getVideoTracks().length);
+      
+      // Wait for video element to be ready
+      let retries = 0;
+      while (!videoRef.current && retries < 10) {
+        console.log('⏳ [Camera] Waiting for video element...', retries);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retries++;
       }
-    } catch (error) {
-      showMessage('Gagal mengakses kamera. Pastikan izin kamera diaktifkan.', 'error');
+      
+      if (!videoRef.current) {
+        console.error('❌ [Camera] Video ref is null after waiting');
+        setIsCameraLoading(false);
+        showMessage('Error: Video element tidak siap. Coba refresh halaman.', 'error');
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      
+      console.log('🎥 [Camera] Video ref exists, attaching stream...');
+      const video = videoRef.current;
+      
+      // Set attributes for better mobile support
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('autoplay', 'true');
+      video.setAttribute('muted', 'true');
+      video.muted = true;
+      
+      // Attach stream
+      video.srcObject = stream;
+      
+      // Create a promise to handle both metadata loaded and timeout
+      const startPlayback = async () => {
+        try {
+          // Wait for metadata or timeout
+          await Promise.race([
+            new Promise((resolve) => {
+              video.onloadedmetadata = () => {
+                console.log('🎥 [Camera] Video metadata loaded');
+                console.log('🎥 [Camera] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+                resolve(true);
+              };
+            }),
+            new Promise((resolve) => setTimeout(() => {
+              console.log('⏰ [Camera] Metadata timeout, attempting play anyway');
+              resolve(true);
+            }, 2000))
+          ]);
+          
+          // Try to play the video
+          console.log('🎥 [Camera] Attempting to play video...');
+          await video.play();
+          
+          console.log('✅ [Camera] Video playing successfully');
+          console.log('✅ [Camera] User:', user?.name, 'camera activated');
+          setIsCameraOn(true);
+          setIsCameraLoading(false);
+          showMessage('✅ Kamera berhasil dihidupkan!', 'success');
+          
+          // Start quality checking after camera is on
+          startQualityChecking();
+          
+        } catch (playError: any) {
+          console.error('❌ [Camera] Failed to play video:', playError);
+          console.error('❌ [Camera] Error details:', playError.message, playError.name);
+          
+          // Try one more time after a short delay
+          console.log('🔄 [Camera] Retrying play...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          try {
+            await video.play();
+            console.log('✅ [Camera] Video playing on retry');
+            setIsCameraOn(true);
+            setIsCameraLoading(false);
+            showMessage('✅ Kamera berhasil dihidupkan!', 'success');
+            startQualityChecking();
+          } catch (retryError: any) {
+            console.error('❌ [Camera] Retry failed:', retryError);
+            setIsCameraLoading(false);
+            showMessage('Gagal menjalankan video kamera. Coba klik tombol lagi.', 'error');
+            // Clean up
+            stream.getTracks().forEach(track => track.stop());
+          }
+        }
+      };
+      
+      // Add error handler for video element
+      video.onerror = (err) => {
+        console.error('❌ [Camera] Video element error:', err);
+        setIsCameraLoading(false);
+        showMessage('Error pada video element', 'error');
+      };
+      
+      // Start playback
+      await startPlayback();
+      
+    } catch (error: any) {
+      console.error('❌ [Camera] Camera access error:', error);
+      console.error('❌ [Camera] Error name:', error.name);
+      console.error('❌ [Camera] Error message:', error.message);
+      console.error('❌ [Camera] User:', user?.name);
+      
+      setIsCameraLoading(false);
+      
+      let errorMessage = 'Gagal mengakses kamera. ';
+      
+      if (error.name === 'NotAllowedError') {
+        console.error('❌ [Camera] Permission denied by user');
+        errorMessage += 'Izin kamera ditolak. Mohon klik "Allow" saat browser meminta izin kamera.';
+      } else if (error.name === 'NotFoundError') {
+        console.error('❌ [Camera] No camera device found');
+        errorMessage += 'Kamera tidak ditemukan. Pastikan perangkat Anda memiliki kamera.';
+      } else if (error.name === 'NotReadableError') {
+        console.error('❌ [Camera] Camera already in use');
+        errorMessage += 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi lain yang menggunakan kamera.';
+      } else if (error.name === 'OverconstrainedError') {
+        console.error('❌ [Camera] Camera constraints not satisfied');
+        errorMessage += 'Kamera tidak mendukung pengaturan yang diminta.';
+      } else if (error.name === 'SecurityError') {
+        console.error('❌ [Camera] Security error - likely HTTPS required');
+        errorMessage += 'Error keamanan. Akses kamera memerlukan HTTPS atau localhost.';
+      } else {
+        console.error('❌ [Camera] Unknown error:', error);
+        errorMessage += error.message || 'Error tidak diketahui.';
+      }
+      
+      showMessage(errorMessage, 'error');
     }
   };
 
   const stopCamera = () => {
+    console.log('🛑 [Camera] Stopping camera...');
+    console.log('🛑 [Camera] User:', user?.name);
+    
     if (videoRef.current && videoRef.current.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+      const tracks = stream.getTracks();
+      
+      console.log('🛑 [Camera] Stopping', tracks.length, 'tracks');
+      tracks.forEach(track => {
+        console.log('🛑 [Camera] Stopping track:', track.kind, track.label);
+        track.stop();
+      });
+      
+      videoRef.current.srcObject = null;
       setIsCameraOn(false);
+      
       // Stop quality checking
       stopQualityChecking();
+      
       // Reset quality states
       setQualityMetrics(null);
       setMaskDetection(null);
       setQualityRecommendation('');
       setIsQualityAcceptable(false);
+      
+      console.log('✅ [Camera] Camera stopped successfully');
+      showMessage('Kamera dimatikan', 'success');
+    } else {
+      console.warn('⚠️ [Camera] No active camera to stop');
     }
   };
 
@@ -135,11 +318,25 @@ function Dashboard() {
   };
 
   const checkFaceQuality = async () => {
-    if (!isCameraOn || isCheckingQuality || !videoRef.current) return;
+    if (!isCameraOn || isCheckingQuality || !videoRef.current) {
+      console.log('⏭️ [Quality] Skipping quality check:', {
+        isCameraOn,
+        isCheckingQuality,
+        hasVideoRef: !!videoRef.current
+      });
+      return;
+    }
+    
+    console.log('🔍 [Quality] Starting face quality check...');
+    console.log('🔍 [Quality] User:', user?.name);
     
     const imageData = captureImage();
-    if (!imageData) return;
+    if (!imageData) {
+      console.error('❌ [Quality] Failed to capture image');
+      return;
+    }
 
+    console.log('🔍 [Quality] Image captured, sending to backend...');
     setIsCheckingQuality(true);
     
     try {
@@ -151,12 +348,19 @@ function Dashboard() {
         }
       });
 
+      console.log('✅ [Quality] Backend response:', response.data.status);
+
       if (response.data.status === 'success') {
+        console.log('✅ [Quality] Quality metrics:', response.data.quality_metrics);
+        console.log('✅ [Quality] Overall score:', response.data.quality_metrics?.overall_score);
+        console.log('✅ [Quality] Acceptable:', response.data.quality_acceptable);
+        
         setQualityMetrics(response.data.quality_metrics);
         setMaskDetection(response.data.mask_detection);
         setQualityRecommendation(response.data.recommendation);
         setIsQualityAcceptable(response.data.quality_acceptable);
       } else {
+        console.warn('⚠️ [Quality] Face not detected');
         // If face not detected, reset quality
         setQualityMetrics(null);
         setMaskDetection(null);
@@ -165,7 +369,8 @@ function Dashboard() {
       }
     } catch (error: any) {
       // Silently fail quality check, don't show error to user
-      console.error('Quality check error:', error);
+      console.error('❌ [Quality] Quality check error:', error);
+      console.error('❌ [Quality] Error details:', error.message);
     } finally {
       setIsCheckingQuality(false);
     }
@@ -196,12 +401,17 @@ function Dashboard() {
   };
 
   const showMessage = (msg: string, type: 'success' | 'error') => {
+    console.log(`📢 [Message] ${type.toUpperCase()}:`, msg);
     setMessage(msg);
     setMessageType(type);
+    
+    // Error messages stay longer (8 seconds), success messages shorter (4 seconds)
+    const duration = type === 'error' ? 8000 : 4000;
+    
     setTimeout(() => {
       setMessage('');
       setMessageType('');
-    }, 5000);
+    }, duration);
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -302,14 +512,20 @@ function Dashboard() {
         setRecognizedUser(response.data.name);
         
         if (!response.data.already_marked) {
-          showMessage(response.data.message, 'success');
+          showMessage('🎉 Absensi berhasil dicatat! Kamera akan dimatikan.', 'success');
           loadAttendanceRecords();
           checkAttendanceStatus(); // Refresh attendance status
+          
+          // Close camera after 2 seconds
+          setTimeout(() => {
+            console.log('✅ [Auto] Closing camera after successful attendance');
+            stopCamera();
+            setRecognizedUser(null);
+          }, 2000);
         } else {
-          showMessage(response.data.message, 'success');
+          showMessage('ℹ️ Anda sudah absen hari ini.', 'success');
+          setTimeout(() => setRecognizedUser(null), 3000);
         }
-        
-        setTimeout(() => setRecognizedUser(null), 3000);
       } else if (response.data.status === 'error') {
         showMessage(response.data.message, 'error');
         setRecognizedUser(null);
@@ -420,7 +636,15 @@ function Dashboard() {
           </div>
           
           <div className="relative mb-4" data-testid="camera-container">
-            {isCameraOn ? (
+            {isCameraLoading ? (
+              <div className="w-full aspect-video bg-gray-900 rounded-xl flex items-center justify-center border-4 border-blue-500 animate-pulse">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-4"></div>
+                  <p className="text-white font-bold text-lg">🎥 Menghidupkan Kamera...</p>
+                  <p className="text-blue-200 text-sm mt-2">Mohon tunggu sebentar</p>
+                </div>
+              </div>
+            ) : isCameraOn ? (
               <>
                 <video
                   ref={videoRef}
@@ -457,12 +681,22 @@ function Dashboard() {
             {!isCameraOn ? (
               <button
                 onClick={startCamera}
-                className="w-full px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-bold hover:from-green-700 hover:to-green-800 transition-all flex items-center justify-center gap-2"
+                disabled={isCameraLoading}
+                className="w-full px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-bold hover:from-green-700 hover:to-green-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Hidupkan Kamera
+                {isCameraLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Menghidupkan...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Hidupkan Kamera
+                  </>
+                )}
               </button>
             ) : (
               <>

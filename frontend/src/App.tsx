@@ -1,9 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Materials from './pages/Materials';
-import Assignments from './pages/Assignments';
+import DashboardPage from './pages/DashboardPage';
+import AttendancePage from './pages/AttendancePage';
 import Settings from './pages/Settings';
 
 function App() {
@@ -29,15 +28,11 @@ function App() {
       />
       <Route 
         path="/" 
-        element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" replace />} 
+        element={isAuthenticated ? <DashboardPage /> : <Navigate to="/login" replace />} 
       />
       <Route 
-        path="/materials" 
-        element={isAuthenticated ? <Materials /> : <Navigate to="/login" replace />} 
-      />
-      <Route 
-        path="/assignments" 
-        element={isAuthenticated ? <Assignments /> : <Navigate to="/login" replace />} 
+        path="/attendance" 
+        element={isAuthenticated ? <AttendancePage /> : <Navigate to="/login" replace />} 
       />
       <Route 
         path="/settings" 

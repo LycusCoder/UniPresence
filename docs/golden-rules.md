@@ -11,18 +11,160 @@
 ## 📚 Table of Contents
 
 1. [Core Principles](#core-principles)
-2. [Code Standards](#code-standards)
-3. [Architecture Guidelines](#architecture-guidelines)
-4. [Path Management & Portability](#path-management--portability)
-5. [Multi-Language Support (i18n)](#multi-language-support-i18n)
-6. [Database Best Practices](#database-best-practices)
-7. [Security Standards](#security-standards)
-8. [Image Processing Guidelines](#image-processing-guidelines)
-9. [Real-time Communication](#real-time-communication)
-10. [API Design](#api-design)
-11. [Testing Requirements](#testing-requirements)
-12. [Documentation Standards](#documentation-standards)
-13. [Indonesian Business Standards](#indonesian-business-standards)
+2. [⚠️ CRITICAL: URL & Port Configuration](#critical-url--port-configuration)
+3. [Code Standards](#code-standards)
+4. [Architecture Guidelines](#architecture-guidelines)
+5. [Path Management & Portability](#path-management--portability)
+6. [Multi-Language Support (i18n)](#multi-language-support-i18n)
+7. [Database Best Practices](#database-best-practices)
+8. [Security Standards](#security-standards)
+9. [Image Processing Guidelines](#image-processing-guidelines)
+10. [Real-time Communication](#real-time-communication)
+11. [API Design](#api-design)
+12. [Testing Requirements](#testing-requirements)
+13. [Documentation Standards](#documentation-standards)
+14. [Indonesian Business Standards](#indonesian-business-standards)
+
+---
+
+## ⚠️ CRITICAL: URL & Port Configuration
+
+### **🚨 ABSOLUTE RULES - NEVER VIOLATE THESE:**
+
+#### **1. NEVER Change These URLs/Ports:**
+```bash
+# ❌ FORBIDDEN - DO NOT MODIFY:
+Frontend: localhost:3000  # NEVER change this
+Backend:  localhost:8001  # NEVER change this
+
+# ❌ FORBIDDEN - DO NOT ADD:
+- External URLs in vite.config.ts HMR settings
+- Preview URLs (nourivex.com) in config files
+- Any hardcoded IP addresses or domains
+```
+
+#### **2. Allowed URL Configuration:**
+
+**Frontend (.env)**
+```bash
+# ✅ ONLY ALLOWED:
+VITE_BACKEND_URL=http://localhost:8001
+
+# ❌ NEVER:
+VITE_BACKEND_URL=http://0.0.0.0:8001  # WRONG!
+VITE_BACKEND_URL=https://xxx.preview.nourivex.com  # WRONG!
+```
+
+**Backend (.env)**
+```bash
+# ✅ CORRECT:
+PORT=8001
+DATABASE_URL=sqlite:///instance/attendance.db
+
+# ❌ NEVER hardcode full paths:
+DATABASE_URL=sqlite:////app/backend/instance/attendance.db  # WRONG!
+```
+
+#### **3. Vite Config Rules:**
+
+**vite.config.ts - CORRECT CONFIGURATION:**
+```typescript
+// ✅ CORRECT - Always use this exact config:
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',  // Allow external connections
+    port: 3000,
+    hmr: {
+      host: 'localhost',  // ✅ MUST be localhost
+      port: 3000,         // ✅ MUST be 3000
+    }
+  },
+});
+
+// ❌ WRONG - NEVER do this:
+server: {
+  hmr: {
+    host: 'xxx.preview.nourivex.com',  // ❌ FORBIDDEN!
+    protocol: 'wss'  // ❌ Not needed for localhost
+  }
+}
+```
+
+#### **4. Why This Matters:**
+
+**Issue:** Vite HMR WebSocket fails with errors like:
+```
+Firefox can't establish a connection to the server at 
+wss://xxx.preview.nourivex.com:3000/
+```
+
+**Root Cause:**
+- HMR (Hot Module Replacement) tries to connect via external URL
+- WebSocket connection fails because it expects localhost
+
+**Solution:**
+- Always use `localhost` in HMR config
+- Never use preview/external URLs in Vite config
+- Browser will access via external URL, but HMR MUST use localhost
+
+#### **5. Backend API Calls:**
+
+**In React Components:**
+```typescript
+// ✅ CORRECT - Use environment variable:
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8001';
+
+// ❌ WRONG - Hardcoded:
+const BACKEND_URL = 'http://localhost:8001';  // Don't hardcode!
+const BACKEND_URL = 'http://0.0.0.0:8001';   // Wrong host!
+```
+
+#### **6. Supervisor Configuration:**
+
+**Backend server.py:**
+```python
+# ✅ CORRECT:
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8001, debug=False)
+
+# ❌ WRONG:
+if __name__ == '__main__':
+    app.run(host='localhost', port=8001)  # Won't accept external connections!
+```
+
+**Why `0.0.0.0`?**
+- Backend binds to `0.0.0.0:8001` to accept connections from anywhere
+- Frontend calls it via `localhost:8001` (from .env)
+- Supervisor maps external requests correctly
+
+#### **7. Common Mistakes to Avoid:**
+
+```typescript
+// ❌ MISTAKE 1: External URL in HMR
+hmr: {
+  host: 'preview.nourivex.com'  // ❌ NEVER!
+}
+
+// ❌ MISTAKE 2: Hardcoded backend URL
+const API_URL = "http://localhost:8001/api";  // ❌ No env var!
+
+// ❌ MISTAKE 3: Wrong host
+const API_URL = process.env.VITE_BACKEND_URL.replace('localhost', '0.0.0.0');  // ❌ WHY?!
+
+// ❌ MISTAKE 4: Modifying .env with external URLs
+VITE_BACKEND_URL=https://external-api.com  // ❌ Should be localhost!
+```
+
+#### **8. Verification Checklist:**
+
+Before committing any code, verify:
+- [ ] `vite.config.ts` HMR uses `localhost:3000`
+- [ ] `.env` files use `localhost` URLs only
+- [ ] No hardcoded URLs in React components
+- [ ] Backend binds to `0.0.0.0` (not `localhost`)
+- [ ] Frontend calls backend via `VITE_BACKEND_URL` env var
+- [ ] No preview URLs in any config files
 
 ---
 

@@ -52,26 +52,17 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=config.JWT_ACCESS_TOKEN
 
 jwt = JWTManager(app)
 
-# CORS Configuration
+# CORS Configuration - Allow all origins for development
+# For production, restrict to specific domains
 CORS(app, 
-     resources={r"/api/*": {
-         "origins": config.CORS_ORIGINS,
+     resources={r"/*": {
+         "origins": "*",  # Allow all origins
          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          "allow_headers": ["Content-Type", "Authorization"],
          "expose_headers": ["Content-Type", "Authorization"],
-         "supports_credentials": True,
+         "supports_credentials": False,  # Must be False when origins is "*"
          "max_age": 3600
      }})
-
-@app.after_request
-def after_request(response):
-    origin = request.headers.get('Origin')
-    if origin in config.CORS_ORIGINS:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response
 
 # Database setup using Config
 engine = create_engine(config.DATABASE_URL, echo=config.SQLALCHEMY_ECHO)
@@ -787,6 +778,69 @@ def check_attendance_today():
         return jsonify({
             'status': 'error',
             'message': translate('server_error', lang)
+        }), 500
+
+@app.route('/api/attendance/stats', methods=['GET'])
+@jwt_required()
+def get_attendance_stats():
+    """Get attendance statistics for current user"""
+    try:
+        current_user_id = get_jwt_identity()
+        claims = get_jwt()
+        lang = claims.get('language', 'id')
+        
+        session = SessionLocal()
+        try:
+            today = datetime.now().date()
+            this_week_start = today - timedelta(days=today.weekday())
+            this_month_start = today.replace(day=1)
+            
+            # Check if attended today
+            today_attendance = session.query(Attendance).filter(
+                Attendance.employee_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(today, datetime.min.time())
+            ).first()
+            
+            # Count this week
+            week_count = session.query(Attendance).filter(
+                Attendance.employee_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(this_week_start, datetime.min.time())
+            ).count()
+            
+            # Count this month
+            month_count = session.query(Attendance).filter(
+                Attendance.employee_id == current_user_id,
+                Attendance.timestamp >= datetime.combine(this_month_start, datetime.min.time())
+            ).count()
+            
+            stats = {
+                'today': today_attendance is not None,
+                'this_week': week_count,
+                'this_month': month_count
+            }
+            
+            if today_attendance:
+                employee = session.query(Employee).filter_by(
+                    employee_id=current_user_id
+                ).first()
+                date_format = employee.date_format_preference if employee else 'indonesian'
+                stats['attendance_time'] = today_attendance.timestamp.isoformat()
+                stats['formatted_time'] = format_datetime(today_attendance.timestamp, date_format)
+            
+            return jsonify({
+                'status': 'success',
+                'stats': stats
+            }), 200
+        
+        finally:
+            session.close()
+    
+    except Exception as e:
+        print(f"Error in /api/attendance/stats: {str(e)}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': translate('server_error', 'id')
         }), 500
 
 # ==================== EMPLOYEE MANAGEMENT ====================
