@@ -1,243 +1,593 @@
 #!/bin/bash
 
-# --- START SCRIPT: start_services.sh (Robust Setup & Launcher) ---
+# =============================================================================
+# 🚀 UNIPRESENCE SERVICE LAUNCHER v5.0 - SMART & ALWAYS FRESH
+# =============================================================================
 
 # ====================================================================
-# 1. KONFIGURASI AWAL & VARIABEL GLOBAL
+# 1. KONFIGURASI & VARIABEL GLOBAL
 # ====================================================================
 
 LOG_DIR="/tmp"
 BACKEND_LOG="$LOG_DIR/unipresence_backend.log"
 FRONTEND_LOG="$LOG_DIR/unipresence_frontend.log"
-# Folder Venv khusus
-VENV_NAME="tugascitra"
-VENV_DIR="./$VENV_NAME"
-# Path binari Python untuk Linux/Mac dan Windows (Scripts)
-VENV_BIN_PATH="$VENV_DIR/bin"
-VENV_SCRIPTS_PATH="$VENV_DIR/Scripts"
+NGROK_LOG="$LOG_DIR/unipresence_ngrok.log"
+
+# PID Files (untuk tracking process)
+BACKEND_PID_FILE="$LOG_DIR/unipresence_backend.pid"
+FRONTEND_PID_FILE="$LOG_DIR/unipresence_frontend.pid"
+NGROK_PID_FILE="$LOG_DIR/unipresence_ngrok.pid"
+
+# Python Environment
 PYTHON_CMD=""
+USE_CONDA=false
+
+# Ngrok Configuration
+USE_NGROK=false
+NGROK_BACKEND_PORT=8001
+
+# Warna untuk output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
 # Hapus log lama
-rm -f "$BACKEND_LOG" "$FRONTEND_LOG"
+rm -f "$BACKEND_LOG" "$FRONTEND_LOG" "$NGROK_LOG"
 
+# Trap untuk cleanup saat Ctrl+C
+trap cleanup_on_exit INT TERM
+
+cleanup_on_exit() {
+    echo ""
+    print_warning "Stopping services..."
+    
+    # Kill services using PID files
+    if [ -f "$BACKEND_PID_FILE" ]; then
+        SAVED_PID=$(cat "$BACKEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_PID" ] && kill -0 "$SAVED_PID" 2>/dev/null; then
+            kill -9 "$SAVED_PID" 2>/dev/null
+            print_info "Stopped Backend (PID: $SAVED_PID)"
+        fi
+        rm -f "$BACKEND_PID_FILE"
+    fi
+    
+    if [ -f "$FRONTEND_PID_FILE" ]; then
+        SAVED_PID=$(cat "$FRONTEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_PID" ] && kill -0 "$SAVED_PID" 2>/dev/null; then
+            kill -9 "$SAVED_PID" 2>/dev/null
+            print_info "Stopped Frontend (PID: $SAVED_PID)"
+        fi
+        rm -f "$FRONTEND_PID_FILE"
+    fi
+    
+    if [ -f "$NGROK_PID_FILE" ]; then
+        SAVED_PID=$(cat "$NGROK_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_PID" ] && kill -0 "$SAVED_PID" 2>/dev/null; then
+            kill -9 "$SAVED_PID" 2>/dev/null
+            print_info "Stopped Ngrok (PID: $SAVED_PID)"
+        fi
+        rm -f "$NGROK_PID_FILE"
+    fi
+    
+    # Restore .env if using ngrok
+    if [ "$USE_NGROK" = true ]; then
+        restore_frontend_env
+    fi
+    
+    print_success "Cleanup complete. Goodbye!"
+    exit 0
+}
 
 # ====================================================================
-# 2. FUNGSI: SETUP PYTHON ENVIRONMENT
+# 2. FUNGSI UTILITY
 # ====================================================================
 
-setup_python_env() {
-    # Prioritas 1: Conda Aktif (Pilihan Lycus)
+print_header() {
+    echo -e "${CYAN}"
+    echo "=========================================================="
+    echo "$1"
+    echo "=========================================================="
+    echo -e "${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+# ====================================================================
+# 3. FUNGSI: DETECT PYTHON ENVIRONMENT
+# ====================================================================
+
+detect_python_env() {
+    print_header "🐍 DETECTING PYTHON ENVIRONMENT"
+    
+    # Check if Conda is active
     if [ ! -z "$CONDA_PREFIX" ]; then
-        PYTHON_CMD="$CONDA_PREFIX/bin/python"
-        echo "✅ Python Environment: Conda ($(basename $CONDA_PREFIX)) terdeteksi dan digunakan."
+        PYTHON_CMD="python"
+        USE_CONDA=true
+        print_success "Using Conda Environment: $(basename $CONDA_PREFIX)"
         return 0
     fi
     
-    # Prioritas 2: Venv tugascitra sudah ada
-    if [ -f "$VENV_BIN_PATH/python" ]; then
-        PYTHON_CMD="$VENV_BIN_PATH/python"
-        echo "✅ Python Environment: Venv '$VENV_NAME' terdeteksi dan digunakan."
+    # Fallback to system python
+    if command -v python3 &>/dev/null; then
+        PYTHON_CMD="python3"
+        print_success "Using System Python3"
         return 0
-    elif [ -f "$VENV_SCRIPTS_PATH/python.exe" ]; then
-        PYTHON_CMD="$VENV_SCRIPTS_PATH/python.exe"
-        echo "✅ Python Environment: Venv '$VENV_NAME' (Scripts/Windows) terdeteksi dan digunakan."
+    elif command -v python &>/dev/null; then
+        PYTHON_CMD="python"
+        print_success "Using System Python"
         return 0
-    fi
-
-    # Prioritas 3: Tawarkan untuk membuat Venv baru
-    echo "--------------------------------------------------------"
-    echo "❓ Setup Environment Python Belum Terdeteksi."
-    echo "Pilih opsi setup Python (1 atau 2):"
-    echo "1. Gunakan Python Venv Baru ('$VENV_NAME') - Disarankan untuk Windows/Lokal"
-    echo "2. Keluar dan aktifkan Conda Env Anda secara manual (Misal: conda activate base)"
-    echo "--------------------------------------------------------"
-    read -p "Pilihan Anda (1/2): " choice
-
-    if [ "$choice" == "1" ]; then
-        echo "Membuat Python Virtual Environment '$VENV_NAME'..."
-        # Mencoba python3, lalu python sebagai fallback
-        if command -v python3 &>/dev/null; then
-            python3 -m venv "$VENV_DIR"
-        elif command -v python &>/dev/null; then
-            python -m venv "$VENV_DIR"
-        else
-            echo "❌ ERROR: Perintah 'python' atau 'python3' tidak ditemukan. Instal Python atau aktifkan Conda."
-            exit 1
-        fi
-        
-        # Cek ulang path venv setelah dibuat dan set PYTHON_CMD
-        if [ -f "$VENV_BIN_PATH/python" ]; then
-            PYTHON_CMD="$VENV_BIN_PATH/python"
-        elif [ -f "$VENV_SCRIPTS_PATH/python.exe" ]; then
-             PYTHON_CMD="$VENV_SCRIPTS_PATH/python.exe"
-        else
-            echo "❌ ERROR: Venv berhasil dibuat tapi interpreter Python tidak ditemukan di $VENV_DIR. Skrip dibatalkan."
-            exit 1
-        fi
-        echo "✅ Venv '$VENV_NAME' berhasil dibuat dan akan digunakan."
-    elif [ "$choice" == "2" ]; then
-        echo "❌ Silakan aktifkan Conda Environment Anda secara manual (Misal: conda activate base) sebelum menjalankan skrip ini."
-        exit 1
     else
-        echo "❌ Pilihan tidak valid. Skrip dibatalkan."
+        print_error "Python tidak ditemukan! Install Python atau aktifkan Conda."
         exit 1
     fi
 }
 
-
 # ====================================================================
-# 3. FUNGSI: DEPENDENCY CHECK & INSTALL & KILL SERVICES
+# 4. FUNGSI: SMART DEPENDENCY INSTALL
 # ====================================================================
 
-check_and_install_deps() {
-    # Cek Backend Dependencies
-    echo ""
-    echo "--- Memeriksa Backend (Python) Dependencies ---"
-    REQUIREMENTS_FILE="./backend/requirements.txt"
-    # Marker file agar tidak instal ulang setiap kali requirements.txt tidak berubah
-    DEPENDENCY_MARKER="./backend/.backend_deps_installed" 
-
-    if [ -f "$REQUIREMENTS_FILE" ]; then
-        # Cek apakah marker file ada DAN requirements.txt tidak lebih baru (artinya sudah terinstal)
-        if [ -f "$DEPENDENCY_MARKER" ] && [ "$REQUIREMENTS_FILE" -ot "$DEPENDENCY_MARKER" ]; then
-            echo "✅ Backend dependencies sudah terinstal di Venv/Conda ($VENV_NAME)."
-        else
-            echo "⚙️ Menginstal ulang/memperbarui Backend dependencies..."
-            # Gunakan pip install --upgrade agar lebih aman jika ada perubahan
-            "$PYTHON_CMD" -m pip install --upgrade pip
-            "$PYTHON_CMD" -m pip install -r "$REQUIREMENTS_FILE"
-            if [ $? -ne 0 ]; then
-                echo "❌ ERROR: Gagal menginstal Python dependencies. Cek log instalasi di atas."
-                exit 1
-            fi
-            touch "$DEPENDENCY_MARKER" # Buat marker baru
-            echo "✅ Instalasi Backend selesai."
-        fi
-    else
-        echo "Peringatan: File $REQUIREMENTS_FILE tidak ditemukan. Melewatkan instalasi Backend."
+install_backend_deps() {
+    print_header "📦 INSTALLING BACKEND DEPENDENCIES"
+    
+    if [ ! -f "./backend/requirements.txt" ]; then
+        print_warning "requirements.txt tidak ditemukan. Skipping..."
+        return 0
     fi
-
-    # Cek Frontend Dependencies
-    echo ""
-    echo "--- Memeriksa Frontend (Yarn/NPM) Dependencies ---"
-    if [ ! -d "./frontend/node_modules" ]; then
-        echo "⚙️ Folder node_modules tidak ditemukan. Menjalankan instalasi..."
-        
-        if command -v yarn &>/dev/null; then
-            yarn --cwd ./frontend install
-            COMMAND_USED="Yarn"
-        elif command -v npm &>/dev/null; then
-            echo "Peringatan: Yarn tidak ditemukan. Menggunakan 'npm install'..."
-            npm --prefix ./frontend install
-            COMMAND_USED="NPM"
-        else
-            echo "❌ ERROR: Yarn dan NPM tidak ditemukan. Instal salah satu untuk melanjutkan."
-            exit 1
-        fi
-        
-        if [ $? -ne 0 ]; then
-            echo "❌ ERROR: Gagal menjalankan $COMMAND_USED install. Cek koneksi internet/izin."
-            exit 1
-        fi
-        echo "✅ Frontend dependencies terinstal dengan $COMMAND_USED."
+    
+    print_info "Running: pip install -r requirements.txt..."
+    
+    cd backend
+    $PYTHON_CMD -m pip install -r requirements.txt --quiet --disable-pip-version-check
+    
+    if [ $? -eq 0 ]; then
+        print_success "Backend dependencies berhasil diinstall/update!"
+        cd ..
+        return 0
     else
-        echo "✅ Frontend dependencies (node_modules) sudah terinstal."
+        print_error "Gagal install backend dependencies!"
+        cd ..
+        exit 1
     fi
 }
 
-# FUNGSI BARU: Kill services yang sedang berjalan (Enhanced by PORT)
+install_frontend_deps() {
+    print_header "📦 INSTALLING FRONTEND DEPENDENCIES"
+    
+    if [ ! -f "./frontend/package.json" ]; then
+        print_warning "package.json tidak ditemukan. Skipping..."
+        return 0
+    fi
+    
+    # Check yarn vs npm
+    if command -v yarn &>/dev/null; then
+        print_info "Running: yarn install..."
+        cd frontend
+        yarn install --silent --non-interactive
+        INSTALL_STATUS=$?
+        cd ..
+        
+        if [ $INSTALL_STATUS -eq 0 ]; then
+            print_success "Frontend dependencies berhasil diinstall/update (Yarn)!"
+            return 0
+        else
+            print_error "Gagal install frontend dependencies!"
+            exit 1
+        fi
+    elif command -v npm &>/dev/null; then
+        print_warning "Yarn tidak ditemukan. Menggunakan npm..."
+        print_info "Running: npm install..."
+        cd frontend
+        npm install --silent --no-progress
+        INSTALL_STATUS=$?
+        cd ..
+        
+        if [ $INSTALL_STATUS -eq 0 ]; then
+            print_success "Frontend dependencies berhasil diinstall/update (npm)!"
+            return 0
+        else
+            print_error "Gagal install frontend dependencies!"
+            exit 1
+        fi
+    else
+        print_error "Yarn dan npm tidak ditemukan! Install salah satu."
+        exit 1
+    fi
+}
+
+# ====================================================================
+# 5. FUNGSI: ASK FOR NGROK
+# ====================================================================
+
+ask_ngrok_usage() {
+    echo ""
+    print_header "🌐 NGROK NETWORK EXPOSURE"
+    echo -e "${CYAN}Apakah Anda ingin mengaktifkan Ngrok?${NC}"
+    echo ""
+    echo "  1. ✅ Ya - Aktifkan Ngrok (Internet Access)"
+    echo "  2. ❌ Tidak - Lokal saja"
+    echo ""
+    read -p "Pilihan (1/2): " ngrok_choice
+    
+    if [ "$ngrok_choice" == "1" ]; then
+        USE_NGROK=true
+        print_success "Ngrok akan diaktifkan!"
+    else
+        USE_NGROK=false
+        print_info "Mode Lokal"
+    fi
+}
+
+# ====================================================================
+# 6. FUNGSI: CHECK NGROK
+# ====================================================================
+
+check_ngrok_installation() {
+    if ! command -v ngrok &>/dev/null; then
+        print_error "Ngrok tidak terinstall!"
+        print_info "Download: https://ngrok.com/download"
+        print_warning "Melanjutkan tanpa Ngrok..."
+        USE_NGROK=false
+        return 1
+    fi
+    
+    # Check authtoken (ngrok v3+ uses different config path)
+    if [ ! -f "$HOME/.config/ngrok/ngrok.yml" ] && [ ! -f "$HOME/.ngrok2/ngrok.yml" ] && [ ! -f "$HOME/snap/ngrok/*/\.config/ngrok/ngrok.yml" ]; then
+        print_warning "Ngrok authtoken belum dikonfigurasi!"
+        print_info "Setup: ngrok config add-authtoken YOUR_TOKEN"
+        print_warning "Melanjutkan tanpa Ngrok..."
+        USE_NGROK=false
+        return 1
+    fi
+    
+    print_success "Ngrok siap digunakan!"
+    return 0
+}
+
+# ====================================================================
+# 7. FUNGSI: KILL EXISTING SERVICES (IMPROVED WITH PID FILES)
+# ====================================================================
+
 kill_existing_services() {
-    echo ""
-    echo "⚙️ Menghentikan proses lama berdasarkan PID dan PORT..."
+    print_header "🧹 CLEANUP OLD PROCESSES"
     
-    # 1. Kill berdasarkan Nama Proses (Fallback Lama, agar proses yang tidak ber-port juga ter-kill)
+    # Step 1: Kill by saved PID files (most reliable)
+    print_info "Checking saved PID files..."
+    
+    if [ -f "$BACKEND_PID_FILE" ]; then
+        SAVED_BACKEND_PID=$(cat "$BACKEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_BACKEND_PID" ] && kill -0 "$SAVED_BACKEND_PID" 2>/dev/null; then
+            kill -9 "$SAVED_BACKEND_PID" 2>/dev/null
+            print_success "Killed Backend (PID: $SAVED_BACKEND_PID)"
+        fi
+        rm -f "$BACKEND_PID_FILE"
+    fi
+    
+    if [ -f "$FRONTEND_PID_FILE" ]; then
+        SAVED_FRONTEND_PID=$(cat "$FRONTEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_FRONTEND_PID" ] && kill -0 "$SAVED_FRONTEND_PID" 2>/dev/null; then
+            kill -9 "$SAVED_FRONTEND_PID" 2>/dev/null
+            print_success "Killed Frontend (PID: $SAVED_FRONTEND_PID)"
+        fi
+        rm -f "$FRONTEND_PID_FILE"
+    fi
+    
+    if [ -f "$NGROK_PID_FILE" ]; then
+        SAVED_NGROK_PID=$(cat "$NGROK_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_NGROK_PID" ] && kill -0 "$SAVED_NGROK_PID" 2>/dev/null; then
+            kill -9 "$SAVED_NGROK_PID" 2>/dev/null
+            print_success "Killed Ngrok (PID: $SAVED_NGROK_PID)"
+        fi
+        rm -f "$NGROK_PID_FILE"
+    fi
+    
+    # Step 2: Kill by process name (fallback)
+    print_info "Killing by process name (fallback)..."
     pkill -9 -f "server.py" 2>/dev/null
+    pkill -9 -f "vite" 2>/dev/null
     pkill -9 -f "yarn dev" 2>/dev/null
+    pkill -9 -f "ngrok http" 2>/dev/null
     
-    # 2. Kill berdasarkan Port (Lebih Akurat menggunakan lsof/fuser)
-    # Port Backend (8001) dan Frontend (3000)
-    PORTS_TO_KILL=(3000 8000 8001)
-
+    # Step 3: Kill by port (most aggressive)
+    print_info "Killing by port (aggressive cleanup)..."
+    PORTS_TO_KILL=(3000 8000 8001 4040)
+    
     for port in "${PORTS_TO_KILL[@]}"; do
-        # Menggunakan lsof yang umum di Linux/Mac. fuser bisa jadi alternatif jika lsof tidak ada
         if command -v lsof &>/dev/null; then
-            PID=$(lsof -t -i:"$port")
+            PID=$(lsof -t -i:"$port" 2>/dev/null)
             if [ ! -z "$PID" ]; then
                 kill -9 "$PID" 2>/dev/null
-                echo "   [KILLED] Port $port (PID: $PID)"
+                print_info "Cleared port $port (PID: $PID)"
             fi
-        # Tambahkan fallback untuk fuser jika lsof tidak tersedia (opsional)
-        # elif command -v fuser &>/dev/null; then
-        #     fuser -k -n tcp "$port" 2>/dev/null
-        #     if [ $? -eq 0 ]; then
-        #         echo "   [KILLED] Port $port (via fuser)"
-        #     fi
         fi
     done
 
-    # Memberi waktu sejenak agar port benar-benar kosong
-    sleep 3 # <-- DIUBAH: Ditingkatkan ke 3 detik agar port pasti kosong sebelum start
-    echo "✅ Proses lama dibersihkan."
+    # Wait for ports to be fully released
+    sleep 3
+    
+    # Verify ports are free
+    print_info "Verifying ports are free..."
+    for port in 3000 8001; do
+        if lsof -i:"$port" 2>/dev/null | grep -q LISTEN; then
+            print_warning "Port $port still in use! Retrying..."
+            PID=$(lsof -t -i:"$port" 2>/dev/null)
+            kill -9 "$PID" 2>/dev/null
+            sleep 2
+        fi
+    done
+    
+    print_success "Cleanup complete!"
 }
 
+# ====================================================================
+# 8. FUNGSI: START SERVICES
+# ====================================================================
+
+start_backend() {
+    print_header "🐍 STARTING BACKEND"
+    
+    cd backend
+    $PYTHON_CMD server.py > "$BACKEND_LOG" 2>&1 &
+    BACKEND_PID=$!
+    cd ..
+    
+    # Save PID to file
+    echo "$BACKEND_PID" > "$BACKEND_PID_FILE"
+    
+    # Wait and verify
+    sleep 3
+    
+    if [ -z "$BACKEND_PID" ] || ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        print_error "Backend GAGAL start! Cek log: $BACKEND_LOG"
+        tail -20 "$BACKEND_LOG"
+        rm -f "$BACKEND_PID_FILE"
+        exit 1
+    else
+        print_success "Backend running (PID: $BACKEND_PID) → http://localhost:8001"
+        print_info "PID saved to: $BACKEND_PID_FILE"
+    fi
+}
+
+start_frontend() {
+    print_header "⚛️  STARTING FRONTEND"
+    
+    # Double check port 3000 is free
+    if lsof -i:3000 2>/dev/null | grep -q LISTEN; then
+        print_warning "Port 3000 still occupied! Force killing..."
+        lsof -ti:3000 | xargs kill -9 2>/dev/null
+        sleep 2
+    fi
+    
+    cd frontend
+    yarn dev --port 3000 --strictPort > "$FRONTEND_LOG" 2>&1 &
+    FRONTEND_PID=$!
+    cd ..
+    
+    # Save PID to file
+    echo "$FRONTEND_PID" > "$FRONTEND_PID_FILE"
+    
+    # Wait and verify
+    sleep 4
+    
+    if [ -z "$FRONTEND_PID" ] || ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        print_error "Frontend GAGAL start! Cek log: $FRONTEND_LOG"
+        tail -20 "$FRONTEND_LOG"
+        rm -f "$FRONTEND_PID_FILE"
+        
+        # Debug: Show what's using port 3000
+        print_warning "Checking port 3000..."
+        lsof -i:3000
+        exit 1
+    else
+        print_success "Frontend running (PID: $FRONTEND_PID) → http://localhost:3000"
+        print_info "PID saved to: $FRONTEND_PID_FILE"
+    fi
+}
+
+start_ngrok() {
+    print_header "🌐 STARTING NGROK"
+    
+    print_info "Starting tunnel for port $NGROK_BACKEND_PORT..."
+    ngrok http $NGROK_BACKEND_PORT --log=stdout > "$NGROK_LOG" 2>&1 &
+    NGROK_PID=$!
+    
+    # Save PID to file
+    echo "$NGROK_PID" > "$NGROK_PID_FILE"
+    
+    # Wait for ngrok to initialize
+    sleep 6
+    
+    # Get public URL from API
+    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o '"public_url":"https://[^"]*' | head -1 | cut -d'"' -f4)
+    
+    if [ -z "$NGROK_URL" ]; then
+        print_warning "Tidak dapat mendapatkan Ngrok URL"
+        print_info "Cek dashboard: http://localhost:4040"
+        return 1
+    else
+        print_success "Ngrok Backend URL: $NGROK_URL"
+        print_info "PID saved to: $NGROK_PID_FILE"
+        
+        # Update frontend .env to use ngrok URL
+        update_frontend_env_for_ngrok "$NGROK_URL"
+    fi
+    
+    print_info "Dashboard: http://localhost:4040"
+}
+
+update_frontend_env_for_ngrok() {
+    local NGROK_URL=$1
+    
+    print_info "Updating frontend .env untuk menggunakan Ngrok URL..."
+    
+    # Backup original .env
+    if [ -f "./frontend/.env" ]; then
+        cp ./frontend/.env ./frontend/.env.backup
+        print_info "Backup .env → .env.backup"
+    fi
+    
+    # Update or create .env dengan ngrok URL
+    if [ -f "./frontend/.env" ]; then
+        # Replace existing VITE_BACKEND_URL
+        if grep -q "VITE_BACKEND_URL" ./frontend/.env; then
+            sed -i.tmp "s|VITE_BACKEND_URL=.*|VITE_BACKEND_URL=$NGROK_URL|g" ./frontend/.env
+            rm -f ./frontend/.env.tmp
+        else
+            echo "VITE_BACKEND_URL=$NGROK_URL" >> ./frontend/.env
+        fi
+    else
+        echo "VITE_BACKEND_URL=$NGROK_URL" > ./frontend/.env
+    fi
+    
+    print_success "Frontend akan menggunakan: $NGROK_URL"
+    print_warning "Frontend perlu direstart untuk apply changes..."
+    
+    # Restart frontend to apply new env
+    restart_frontend_for_ngrok
+}
+
+restart_frontend_for_ngrok() {
+    print_info "Restarting frontend untuk apply Ngrok URL..."
+    
+    # Kill existing frontend using saved PID
+    if [ -f "$FRONTEND_PID_FILE" ]; then
+        SAVED_PID=$(cat "$FRONTEND_PID_FILE" 2>/dev/null)
+        if [ ! -z "$SAVED_PID" ]; then
+            kill $SAVED_PID 2>/dev/null
+            print_info "Stopped old frontend (PID: $SAVED_PID)"
+        fi
+        rm -f "$FRONTEND_PID_FILE"
+    fi
+    
+    # Wait for port to be released
+    sleep 3
+    
+    # Double check port 3000 is free
+    if lsof -i:3000 2>/dev/null | grep -q LISTEN; then
+        print_warning "Port 3000 still occupied! Force killing..."
+        lsof -ti:3000 | xargs kill -9 2>/dev/null
+        sleep 2
+    fi
+    
+    # Restart frontend
+    cd frontend
+    yarn dev --port 3000 --strictPort > "$FRONTEND_LOG" 2>&1 &
+    FRONTEND_PID=$!
+    cd ..
+    
+    # Save new PID
+    echo "$FRONTEND_PID" > "$FRONTEND_PID_FILE"
+    
+    sleep 4
+    
+    if [ -z "$FRONTEND_PID" ] || ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        print_error "Frontend restart GAGAL!"
+        tail -20 "$FRONTEND_LOG"
+        exit 1
+    else
+        print_success "Frontend restarted dengan Ngrok backend URL!"
+    fi
+}
+
+restore_frontend_env() {
+    # Fungsi untuk restore .env ke localhost (dipanggil saat exit)
+    if [ -f "./frontend/.env.backup" ]; then
+        print_info "Restoring frontend .env to localhost..."
+        mv ./frontend/.env.backup ./frontend/.env
+        print_success ".env restored!"
+    fi
+}
 
 # ====================================================================
-# 4. MAIN EXECUTION FLOW
+# 9. MAIN EXECUTION
 # ====================================================================
 
-echo ""
-echo "=========================================================="
-echo "🚀 UniPresence Service Launcher v3.0 (Full Setup)"
-echo "=========================================================="
+print_header "🚀 UNIPRESENCE LAUNCHER v5.0"
 
-# 1. Eksekusi Setup Environment & Instalasi
-setup_python_env
-check_and_install_deps
+# Step 1: Detect Python
+detect_python_env
 
-# 2. KILL EXISTING PROCESSES (Dipanggil di sini)
+# Step 2: Install Dependencies (ALWAYS)
+install_backend_deps
+install_frontend_deps
+
+# Step 3: Ask Ngrok
+ask_ngrok_usage
+
+# Step 4: Check Ngrok if needed
+if [ "$USE_NGROK" = true ]; then
+    check_ngrok_installation
+fi
+
+# Step 5: Cleanup old processes
 kill_existing_services
 
+# Step 6: Start services
+start_backend
+start_frontend
 
-# START BACKEND
-echo ""
-echo "Memulai Backend..."
-# Eksekusi: $PYTHON_CMD menjalankan ./backend/server.py
-# (Asumsi Backend/server.py sudah terkonfigurasi untuk start di port 8001 secara default/internal)
-$PYTHON_CMD ./backend/server.py > "$BACKEND_LOG" 2>&1 &
-BACKEND_PID=$!
-
-# Cek apakah proses benar-benar jalan
-if [ -z "$BACKEND_PID" ] || ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-    echo "❌ ERROR: Backend GAGAL dimulai. Cek log: $BACKEND_LOG"
-    exit 1 # <-- DITAMBAH: Hentikan skrip jika Backend gagal
-else
-    echo "✅ Backend Berhasil dimulai (PID: $BACKEND_PID)"
+# Step 7: Start Ngrok if enabled
+if [ "$USE_NGROK" = true ]; then
+    start_ngrok
 fi
 
+# ====================================================================
+# 10. FINAL STATUS
+# ====================================================================
 
-# START FRONTEND
-echo "Memulai Frontend..."
-# DIUBAH: Tambahkan --port 3000 dan --strictPort
-# --strictPort: Memaksa Vite menggunakan 3000, atau gagal (exit 1) jika terpakai.
-yarn --cwd ./frontend dev --port 3000 --strictPort > "$FRONTEND_LOG" 2>&1 & # <-- BARIS INI DIUBAH
-FRONTEND_PID=$!
+echo ""
+print_header "✨ ALL SYSTEMS RUNNING"
 
-# Cek apakah proses benar-benar jalan
-if [ -z "$FRONTEND_PID" ] || ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    # DIUBAH: Pesan error lebih informatif
-    echo "❌ ERROR: Frontend GAGAL dimulai (Kemungkinan port 3000 masih terpakai / Konflik). Cek log: $FRONTEND_LOG"
-    exit 1 # <-- DITAMBAH: Hentikan skrip jika Frontend gagal di port 3000
+echo -e "${GREEN}🔗 Local Access:${NC}"
+echo -e "   Backend:  ${CYAN}http://localhost:8001${NC}"
+
+if [ "$USE_NGROK" = true ] && [ ! -z "$NGROK_URL" ]; then
+    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC} ${YELLOW}(using Ngrok backend)${NC}"
+    echo ""
+    echo -e "${GREEN}🌍 Internet Access (Ngrok):${NC}"
+    echo -e "   Backend:  ${PURPLE}$NGROK_URL${NC}"
+    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC}"
+    echo -e "   Dashboard: ${CYAN}http://localhost:4040${NC}"
+    echo ""
+    echo -e "${YELLOW}⚠️  PENTING:${NC}"
+    echo -e "   Frontend sudah dikonfigurasi untuk menggunakan Ngrok backend"
+    echo -e "   Akses dari browser manapun akan aman dan terhubung via HTTPS"
 else
-    echo "✅ Frontend Berhasil dimulai (PID: $FRONTEND_PID)"
+    echo -e "   Frontend: ${CYAN}http://localhost:3000${NC}"
 fi
 
-
-# FINAL MESSAGE
 echo ""
-echo "=========================================================="
-echo "Status Servis UniPresence:"
-echo "Backend: http://localhost:8001 (PID: $BACKEND_PID)"
-echo "Frontend: http://localhost:3000 (PID: $FRONTEND_PID)"
-echo "Log Backend: $BACKEND_LOG"
-echo "Log Frontend: $FRONTEND_LOG"
-echo "=========================================================="
+echo -e "${YELLOW}📝 Logs:${NC}"
+echo -e "   Backend:  $BACKEND_LOG"
+echo -e "   Frontend: $FRONTEND_LOG"
+if [ "$USE_NGROK" = true ]; then
+    echo -e "   Ngrok:    $NGROK_LOG"
+fi
+
+echo ""
+print_header "🎉 READY TO GO!"
+if [ "$USE_NGROK" = true ]; then
+    echo -e "${GREEN}Share URL Ngrok untuk akses dari internet!${NC}"
+fi
+echo -e "${CYAN}Tekan Ctrl+C untuk stop dan restore config${NC}"
+echo ""
+
+# Keep running
+wait

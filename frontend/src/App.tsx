@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Login from './pages/Login';
 import DashboardPage from './pages/DashboardPage';
-import AttendancePage from './pages/AttendancePage';
+import AttendancePageDualTabs from './pages/AttendancePageDualTabs';
 import Settings from './pages/Settings';
 
 function App() {
@@ -32,7 +32,7 @@ function App() {
       />
       <Route 
         path="/attendance" 
-        element={isAuthenticated ? <AttendancePage /> : <Navigate to="/login" replace />} 
+        element={isAuthenticated ? <AttendancePageDualTabs /> : <Navigate to="/login" replace />} 
       />
       <Route 
         path="/settings" 

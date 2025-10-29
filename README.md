@@ -1,103 +1,299 @@
-# UniPresence - Sistem Absensi Berbasis Face Recognition
+# UniPresence - Sistem Absensi Berbasis Face Recognition & QR Code
 
-Aplikasi web absensi cerdas dengan deteksi wajah real-time menggunakan Python Flask dan React TypeScript.
+Aplikasi web absensi cerdas dengan dual method: Face Recognition & QR Code Scanner, menggunakan FastAPI backend dan React TypeScript frontend.
 
 ## 🎯 Fitur Utama
 
-- ✅ Deteksi wajah real-time menggunakan face_recognition library
-- ✅ Overlay nama pengguna di atas wajah terdeteksi
-- ✅ Registrasi wajah baru dengan form yang mudah
-- ✅ Riwayat absensi otomatis
-- ✅ UI minimalis dengan tema maroon Universitas Harkat Negeri
-- ✅ Pencatatan absensi otomatis hanya sekali per hari
+### Attendance Methods
+- ✅ **Face Recognition** - Deteksi wajah real-time dengan quality checking
+- ✅ **QR Code Scanner** - Scan QR code untuk absensi cepat
+- ✅ **Dual Tabs Interface** - Switch antara Face & QR mode
+
+### Face Recognition Features
+- ✅ Multi-photo registration (3 foto otomatis untuk akurasi tinggi)
+- ✅ Real-time face quality checking (blur, brightness, angle)
+- ✅ Advanced mask detection (4 detection methods)
+- ✅ Live quality indicator dengan recommendations
+- ✅ Confidence score untuk setiap recognition
+
+### QR Code Features
+- ✅ Encrypted QR code dengan HMAC signature
+- ✅ Time-based expiry validation
+- ✅ In-memory caching untuk performance
+- ✅ Professional E-Card dengan QR code
+- ✅ HTML5-QRCode scanner dengan auto-detect
+
+### System Features
+- ✅ Role-based access (Admin, Manager, Employee)
+- ✅ Attendance restriction (1x per hari)
+- ✅ Real-time attendance records
+- ✅ Feature gating (absen dulu baru bisa akses settings)
+- ✅ Modern UI dengan Tailwind CSS
+- ✅ Responsive design
 
 ## 🛠️ Tech Stack
 
 **Backend:**
 - Python 3.11
-- Flask 2.3.3
-- face_recognition 1.3.0 (dengan dlib)
-- SQLAlchemy 2.0.23
-- SQLite database
+- FastAPI
+- face_recognition (dengan dlib)
+- OpenCV (untuk mask detection)
+- SQLAlchemy + SQLite
+- QRCode generator dengan encryption
+- HMAC-SHA256 security
 
 **Frontend:**
 - React 18 + TypeScript
 - Vite
-- Tailwind CSS (tema maroon #8B0000)
-- Axios untuk API calls
+- Tailwind CSS
+- React Router v6
+- Axios
+- html5-qrcode
+- qrcode.react
+- lucide-react icons
 
 ## 📋 Prerequisites
 
 - Python 3.11+
 - Node.js 18+
-- Yarn
+- Yarn (recommended) atau npm
+- Webcam (untuk Face Recognition)
+- Ngrok (optional, untuk internet access)
 - CMake (untuk building dlib)
-- Webcam
 
-## 🚀 Setup & Installation
+## 🚀 Quick Start
 
-### Backend Setup
+### Option 1: Auto Launcher (Recommended) ⭐
 
 ```bash
-cd /app/backend
+# Single command - auto install dependencies & start all
+./start_services.sh
+```
 
-# Install dependencies
+**Features:**
+- ✅ Auto-detect Python environment (Conda/System)
+- ✅ Always install/update dependencies (pip & yarn)
+- ✅ Interactive Ngrok setup
+- ✅ Auto-cleanup old processes
+- ✅ Colored output dengan error handling
+- ✅ Service verification
+
+**Ngrok Mode:**
+Saat ditanya Ngrok:
+- **Pilih 1 (Ya)** → Frontend akan auto-update menggunakan Ngrok backend URL
+- **Pilih 2 (Tidak)** → Mode localhost saja
+
+### Option 2: Manual Setup
+
+#### Backend
+```bash
+cd backend
 pip install -r requirements.txt
-
-# Start backend server
 python server.py
 ```
 
-Backend akan berjalan di `http://localhost:8001`
-
-### Frontend Setup
-
+#### Frontend
 ```bash
-cd /app/frontend
-
-# Install dependencies
+cd frontend
 yarn install
-
-# Start development server
 yarn dev
 ```
 
-Frontend akan berjalan di `http://localhost:3000`
+## 🌐 Ngrok Integration (Internet Access)
 
-### Start Both Services
+Script `start_services.sh` punya built-in Ngrok support:
 
+### Setup Ngrok:
 ```bash
-# From project root
-bash /app/start_services.sh
+# 1. Install ngrok
+# Download dari: https://ngrok.com/download
+
+# 2. Configure authtoken
+ngrok config add-authtoken 1tierMCZzGM9F2RriYyLZedwOdx_icpo71rmPCut1E2xqBKz
+
+# 3. Run script
+./start_services.sh
+# Pilih: 1 (Ya - Ngrok)
 ```
+
+### Apa yang Terjadi:
+1. Backend start di `http://localhost:8001`
+2. Ngrok create tunnel: `https://abc123.ngrok.io` → `localhost:8001`
+3. Frontend `.env` auto-update ke: `VITE_BACKEND_URL=https://abc123.ngrok.io`
+4. Frontend restart dengan ngrok URL
+5. **Sekarang aplikasi bisa diakses dari internet dengan aman!**
+
+### Benefits:
+- 🌍 Share URL ke teman/dosen untuk demo
+- 📱 Test dari HP/tablet di jaringan berbeda
+- 🔒 HTTPS encryption otomatis dari ngrok
+- 📊 Dashboard monitoring di `http://localhost:4040`
+
+### Restore Config:
+Saat Ctrl+C, script otomatis restore `.env` ke localhost.
 
 ## 📡 API Endpoints
 
-### 1. Health Check
+### Authentication
 ```
-GET /api/health
-Response: { \"status\": \"ok\", \"message\": \"Server is running\" }
-```
-
-### 2. Register New Face
-```
-POST /api/register
-Body: {
-  \"name\": \"Nama Lengkap\",
-  \"student_id\": \"20231001\",
-  \"image\": \"base64_image_string\"
-}
-Response: { \"status\": \"success\", \"message\": \"Wajah berhasil terdaftar!\" }
+POST /api/login
+POST /api/register-user
 ```
 
-### 3. Recognize Face
+### Face Recognition
 ```
-POST /api/recognize
-Body: {
-  \"image\": \"base64_image_string\"
-}
-Response: {
-  \"status\": \"success\",
+POST /api/register          # Register new face (multi-photo)
+POST /api/recognize         # Recognize face & mark attendance
+POST /api/face/analyze      # Check face quality + mask detection
+```
+
+### QR Code
+```
+GET  /api/employee/qrcode/{employee_id}  # Generate QR code
+POST /api/attendance/qr                   # Mark attendance via QR
+```
+
+### Attendance
+```
+GET /api/attendance         # Get all attendance records
+GET /api/attendance/today   # Check today's attendance status
+```
+
+### User Management
+```
+GET  /api/profile
+PUT  /api/profile
+PUT  /api/change-password
+```
+
+## 📁 Project Structure
+
+```
+/app/
+├── backend/
+│   ├── server.py                 # FastAPI main server
+│   ├── models.py                 # SQLAlchemy models
+│   ├── config.py                 # Configuration
+│   ├── requirements.txt          # Python dependencies
+│   └── utils/
+│       ├── mask_detection_cv.py  # Mask detection (OpenCV)
+│       └── qrcode_generator.py   # QR code with encryption
+├── frontend/
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── AttendancePageDualTabs.tsx  # Face + QR tabs
+│   │   │   ├── DashboardPage.tsx
+│   │   │   ├── Settings.tsx
+│   │   │   └── Login.tsx
+│   │   ├── components/
+│   │   │   ├── ECard.tsx              # E-Card with QR
+│   │   │   ├── QRScanner.tsx          # QR scanner
+│   │   │   ├── FaceQualityIndicator.tsx
+│   │   │   └── Sidebar.tsx
+│   │   ├── contexts/
+│   │   │   └── AuthContext.tsx
+│   │   └── App.tsx
+│   ├── package.json
+│   └── .env
+├── start_services.sh         # Auto launcher v5.0
+└── README.md
+```
+
+## 💡 Usage Guide
+
+### 1. Registrasi Karyawan Baru (Admin Only)
+1. Login sebagai Admin/Manager
+2. Buka halaman **Attendance**
+3. Klik **"Daftar Karyawan Baru"**
+4. Pilih tab **Face Recognition**
+5. Isi Nama & NIP
+6. Klik **"Mulai Ambil 3 Foto"**
+7. Sistem akan auto-capture 3 foto dengan countdown
+8. Review foto → Klik **"Daftarkan Sekarang"**
+
+### 2. Absensi via Face Recognition
+1. Buka halaman **Attendance**
+2. Tab **Face Recognition** (default)
+3. Pastikan wajah terlihat jelas di kamera
+4. Tunggu quality indicator hijau
+5. Klik **"Scan Absensi Sekarang"**
+6. Sistem akan recognize & mark attendance
+
+### 3. Absensi via QR Code
+1. Buka halaman **Attendance**
+2. Switch ke tab **QR Code**
+3. Klik **"Aktifkan Scanner"**
+4. Scan QR code dari E-Card karyawan
+5. Attendance otomatis tercatat
+
+### 4. Download E-Card (dengan QR Code)
+1. Login sebagai karyawan
+2. Buka **Dashboard** atau **Settings**
+3. Lihat section **E-Card**
+4. Klik **"Download E-Card"**
+5. E-Card berisi QR code untuk quick attendance
+
+### 5. Demo via Internet (Ngrok)
+```bash
+# Start dengan Ngrok
+./start_services.sh
+# Pilih: 1 (Ya)
+
+# Share ngrok URL ke audience
+# https://abc123.ngrok.io
+```
+
+## 🔧 Troubleshooting
+
+### Dependencies tidak terinstall
+```bash
+# Manual install
+cd backend && pip install -r requirements.txt
+cd frontend && yarn install
+```
+
+### Port sudah digunakan
+```bash
+# Kill processes
+lsof -ti:3000 | xargs kill -9
+lsof -ti:8001 | xargs kill -9
+```
+
+### Ngrok issues
+```bash
+ngrok version           # Check installation
+ngrok config check      # Check authtoken
+```
+
+### Camera tidak terdeteksi
+- Pastikan browser punya camera permission
+- Use HTTPS atau localhost
+- Check browser settings
+
+### Face recognition tidak akurat
+- Pencahayaan cukup terang
+- Wajah langsung ke kamera
+- Lepas masker/kacamata
+- Jarak 40-60 cm
+- Tunggu quality indicator hijau
+
+## 📊 Logs & Debugging
+
+```bash
+# View logs
+tail -f /tmp/unipresence_backend.log
+tail -f /tmp/unipresence_frontend.log
+tail -f /tmp/unipresence_ngrok.log
+
+# Check services
+lsof -i :8001  # Backend
+lsof -i :3000  # Frontend
+lsof -i :4040  # Ngrok
+```
+
+## 📄 License
+
+MIT License - UniPresence Project 2024
   \"name\": \"Nama Lengkap\",
   \"student_id\": \"20231001\",
   \"detected\": true,
