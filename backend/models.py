@@ -34,6 +34,7 @@ class Employee(Base):
     sent_messages = relationship("ChatMessage", foreign_keys="ChatMessage.sender_id", back_populates="sender")
     received_messages = relationship("ChatMessage", foreign_keys="ChatMessage.recipient_id", back_populates="recipient")
     uploaded_documents = relationship("Document", back_populates="employee")
+    face_encodings = relationship("EmployeeFaceEncoding", back_populates="employee", cascade="all, delete-orphan")
 
 # Backward compatibility: Keep User as alias for Employee
 User = Employee
@@ -54,6 +55,23 @@ class Attendance(Base):
 
 # Composite index for efficient date-range queries
 Index('idx_attendance_employee_date', Attendance.employee_id, Attendance.timestamp)
+
+class EmployeeFaceEncoding(Base):
+    """Multiple face encodings per employee for better accuracy"""
+    __tablename__ = 'employee_face_encodings'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    employee_id = Column(String(50), ForeignKey('employees.employee_id'), nullable=False, index=True)
+    face_encoding = Column(LargeBinary, nullable=False)  # Face encoding bytes
+    photo_index = Column(Integer, nullable=False)  # Photo number (1, 2, 3)
+    quality_score = Column(Integer, nullable=True)  # Quality score (0-100)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    employee = relationship("Employee", back_populates="face_encodings")
+
+# Composite index for efficient queries
+Index('idx_face_encoding_employee', EmployeeFaceEncoding.employee_id, EmployeeFaceEncoding.created_at)
+
 
 class ChatMessage(Base):
     """Real-time chat messages between employees"""

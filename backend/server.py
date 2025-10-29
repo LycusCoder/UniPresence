@@ -33,7 +33,7 @@ face_recognition = MockFaceRecognition()
 
 # Import config and utilities
 from config import Config, get_config
-from models import Base, Employee, Attendance
+from models import Base, Employee, Attendance, EmployeeFaceEncoding
 from utils.i18n import translate, get_user_language
 from utils.date_formatter import format_datetime
 from utils.validators import validate_employee_id, validate_email, validate_password, validate_name
@@ -319,7 +319,11 @@ def analyze_face():
 @app.route('/api/register', methods=['POST'])
 @jwt_required()
 def register():
-    """Register new face - Protected endpoint, only manager/admin can register"""
+    """
+    Register new face with MULTIPLE PHOTOS for better accuracy
+    Accepts 3 photos and stores 3 separate encodings
+    Protected endpoint - only manager/admin can register
+    """
     
     claims = get_jwt()
     user_role = claims.get('role')
@@ -358,128 +362,290 @@ def register():
         # Continue with registration
         data = request.get_json()
         
-        if not data or 'name' not in data or 'employee_id' not in data or 'image' not in data:
-            return jsonify({
-                'status': 'error',
-                'message': 'Data tidak lengkap. Diperlukan: name, employee_id, image'
-            }), 400
-        
-        name = data['name']
-        employee_id = data['employee_id']
-        image_base64 = data['image']
-        
-        # Validate employee_id format
-        is_valid, error_msg = validate_employee_id(employee_id)
-        if not is_valid:
-            return jsonify({
-                'status': 'error',
-                'message': error_msg
-            }), 400
-        
-        # Validate name
-        is_valid, error_msg = validate_name(name)
-        if not is_valid:
-            return jsonify({
-                'status': 'error',
-                'message': error_msg
-            }), 400
-        
-        # Decode image
-        img_array, decode_error = decode_base64_image(image_base64)
-        if img_array is None:
-            return jsonify({
-                'status': 'error',
-                'message': f'Gagal memproses gambar: {decode_error}'
-            }), 400
-        
-        # Detect face
-        face_locations = face_recognition.face_locations(img_array, model=config.FACE_DETECTION_MODEL)
-        
-        if len(face_locations) == 0:
-            return jsonify({
-                'status': 'error',
-                'message': translate('face_not_detected', lang)
-            }), 400
-        
-        if len(face_locations) > 1:
-            return jsonify({
-                'status': 'error',
-                'message': translate('multiple_faces', lang)
-            }), 400
-        
-        # Analyze face quality including mask detection
-        quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=True)
-        
-        # Check if quality is acceptable
-        if not quality_result['is_acceptable']:
-            return jsonify({
-                'status': 'error',
-                'message': quality_result['recommendation'],
-                'quality_score': quality_result['quality_score'],
-                'mask_detected': quality_result['mask_detected']
-            }), 400
-        
-        # Warn if mask is detected
-        if quality_result['mask_detected']:
-            return jsonify({
-                'status': 'error',
-                'message': '⚠️ Masker terdeteksi! Harap lepas masker untuk registrasi wajah.',
-                'mask_detected': True,
-                'mask_confidence': quality_result['mask_confidence']
-            }), 400
-        
-        # Extract face encoding
-        face_encodings = face_recognition.face_encodings(img_array, face_locations)
-        
-        if len(face_encodings) == 0:
-            return jsonify({
-                'status': 'error',
-                'message': 'Gagal mengekstrak fitur wajah'
-            }), 400
-        
-        face_encoding = face_encodings[0]
-        
-        # Save to database
-        session = SessionLocal()
-        try:
-            existing_employee = session.query(Employee).filter_by(employee_id=employee_id).first()
+        # Check for MULTIPLE IMAGES (new format)
+        if 'images' in data:
+            # NEW FORMAT: Multiple photos
+            if not data or 'name' not in data or 'employee_id' not in data or 'images' not in data:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Data tidak lengkap. Diperlukan: name, employee_id, images (array)'
+                }), 400
             
-            if existing_employee:
-                # Update existing employee's face
-                existing_employee.face_encoding = face_encoding.tobytes()
-                existing_employee.name = name
-                
-                if not existing_employee.password:
-                    existing_employee.password = bcrypt.hash(employee_id)
-                
-                message = translate('face_updated', lang) + f' ({name})'
-            else:
-                # Create new employee
-                new_employee = Employee(
-                    name=name,
-                    employee_id=employee_id,
-                    password=bcrypt.hash(employee_id),
-                    role='employee',
-                    face_encoding=face_encoding.tobytes()
-                )
-                session.add(new_employee)
-                message = translate('face_registered', lang) + f' ({name}). Password default: {employee_id}'
-
-            session.commit()
+            name = data['name']
+            employee_id = data['employee_id']
+            images_base64 = data['images']  # Array of 3 images
             
-            return jsonify({
-                'status': 'success',
-                'message': message
-            }), 200
+            if not isinstance(images_base64, list) or len(images_base64) != 3:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Diperlukan tepat 3 foto untuk registrasi'
+                }), 400
+            
+            # Validate employee_id format
+            is_valid, error_msg = validate_employee_id(employee_id)
+            if not is_valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': error_msg
+                }), 400
+            
+            # Validate name
+            is_valid, error_msg = validate_name(name)
+            if not is_valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': error_msg
+                }), 400
+            
+            # Process all 3 images
+            encodings_data = []
+            
+            for idx, image_base64 in enumerate(images_base64, start=1):
+                # Decode image
+                img_array, decode_error = decode_base64_image(image_base64)
+                if img_array is None:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Gagal memproses foto ke-{idx}: {decode_error}'
+                    }), 400
+                
+                # Detect face
+                face_locations = face_recognition.face_locations(img_array, model=config.FACE_DETECTION_MODEL)
+                
+                if len(face_locations) == 0:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Wajah tidak terdeteksi pada foto ke-{idx}'
+                    }), 400
+                
+                if len(face_locations) > 1:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Lebih dari 1 wajah terdeteksi pada foto ke-{idx}'
+                    }), 400
+                
+                # Analyze face quality including mask detection
+                quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=True)
+                
+                # Check if quality is acceptable
+                if not quality_result['is_acceptable']:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Foto ke-{idx}: {quality_result["recommendation"]}',
+                        'photo_index': idx,
+                        'quality_score': quality_result['quality_score'],
+                        'mask_detected': quality_result['mask_detected']
+                    }), 400
+                
+                # Warn if mask is detected
+                if quality_result['mask_detected']:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'⚠️ Masker terdeteksi pada foto ke-{idx}! Harap lepas masker untuk registrasi wajah.',
+                        'photo_index': idx,
+                        'mask_detected': True,
+                        'mask_confidence': quality_result['mask_confidence']
+                    }), 400
+                
+                # Extract face encoding
+                face_encodings = face_recognition.face_encodings(img_array, face_locations)
+                
+                if len(face_encodings) == 0:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Gagal mengekstrak fitur wajah dari foto ke-{idx}'
+                    }), 400
+                
+                face_encoding = face_encodings[0]
+                
+                # Store encoding data with metadata
+                encodings_data.append({
+                    'encoding': face_encoding,
+                    'photo_index': idx,
+                    'quality_score': int(quality_result['quality_score'])
+                })
+            
+            # Save to database
+            session = SessionLocal()
+            try:
+                existing_employee = session.query(Employee).filter_by(employee_id=employee_id).first()
+                
+                if existing_employee:
+                    # Update existing employee
+                    existing_employee.name = name
+                    
+                    if not existing_employee.password:
+                        existing_employee.password = bcrypt.hash(employee_id)
+                    
+                    # Delete old face encodings
+                    session.query(EmployeeFaceEncoding).filter_by(
+                        employee_id=employee_id
+                    ).delete()
+                    
+                    message = f'✅ Wajah {name} berhasil diperbarui dengan 3 foto!'
+                else:
+                    # Create new employee
+                    new_employee = Employee(
+                        name=name,
+                        employee_id=employee_id,
+                        password=bcrypt.hash(employee_id),
+                        role='employee'
+                    )
+                    session.add(new_employee)
+                    message = f'✅ Karyawan {name} berhasil didaftarkan dengan 3 foto! Password default: {employee_id}'
+                
+                # Save all 3 face encodings
+                for enc_data in encodings_data:
+                    face_enc = EmployeeFaceEncoding(
+                        employee_id=employee_id,
+                        face_encoding=enc_data['encoding'].tobytes(),
+                        photo_index=enc_data['photo_index'],
+                        quality_score=enc_data['quality_score']
+                    )
+                    session.add(face_enc)
+                
+                session.commit()
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': message,
+                    'photos_registered': 3,
+                    'quality_scores': [enc['quality_score'] for enc in encodings_data]
+                }), 200
+            
+            except Exception as e:
+                session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Gagal menyimpan data: {str(e)}'
+                }), 500
+            finally:
+                session.close()
+        
+        else:
+            # OLD FORMAT: Single photo (backward compatibility)
+            if not data or 'name' not in data or 'employee_id' not in data or 'image' not in data:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Data tidak lengkap. Diperlukan: name, employee_id, image'
+                }), 400
+            
+            name = data['name']
+            employee_id = data['employee_id']
+            image_base64 = data['image']
+            
+            # Validate employee_id format
+            is_valid, error_msg = validate_employee_id(employee_id)
+            if not is_valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': error_msg
+                }), 400
+            
+            # Validate name
+            is_valid, error_msg = validate_name(name)
+            if not is_valid:
+                return jsonify({
+                    'status': 'error',
+                    'message': error_msg
+                }), 400
+            
+            # Decode image
+            img_array, decode_error = decode_base64_image(image_base64)
+            if img_array is None:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Gagal memproses gambar: {decode_error}'
+                }), 400
+            
+            # Detect face
+            face_locations = face_recognition.face_locations(img_array, model=config.FACE_DETECTION_MODEL)
+            
+            if len(face_locations) == 0:
+                return jsonify({
+                    'status': 'error',
+                    'message': translate('face_not_detected', lang)
+                }), 400
+            
+            if len(face_locations) > 1:
+                return jsonify({
+                    'status': 'error',
+                    'message': translate('multiple_faces', lang)
+                }), 400
+            
+            # Analyze face quality including mask detection
+            quality_result = analyze_face_quality(img_array, face_locations[0], check_mask=True)
+            
+            # Check if quality is acceptable
+            if not quality_result['is_acceptable']:
+                return jsonify({
+                    'status': 'error',
+                    'message': quality_result['recommendation'],
+                    'quality_score': quality_result['quality_score'],
+                    'mask_detected': quality_result['mask_detected']
+                }), 400
+            
+            # Warn if mask is detected
+            if quality_result['mask_detected']:
+                return jsonify({
+                    'status': 'error',
+                    'message': '⚠️ Masker terdeteksi! Harap lepas masker untuk registrasi wajah.',
+                    'mask_detected': True,
+                    'mask_confidence': quality_result['mask_confidence']
+                }), 400
+            
+            # Extract face encoding
+            face_encodings = face_recognition.face_encodings(img_array, face_locations)
+            
+            if len(face_encodings) == 0:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Gagal mengekstrak fitur wajah'
+                }), 400
+            
+            face_encoding = face_encodings[0]
+            
+            # Save to database (OLD SINGLE PHOTO METHOD)
+            session = SessionLocal()
+            try:
+                existing_employee = session.query(Employee).filter_by(employee_id=employee_id).first()
+                
+                if existing_employee:
+                    # Update existing employee's face (legacy field)
+                    existing_employee.face_encoding = face_encoding.tobytes()
+                    existing_employee.name = name
+                    
+                    if not existing_employee.password:
+                        existing_employee.password = bcrypt.hash(employee_id)
+                    
+                    message = translate('face_updated', lang) + f' ({name})'
+                else:
+                    # Create new employee
+                    new_employee = Employee(
+                        name=name,
+                        employee_id=employee_id,
+                        password=bcrypt.hash(employee_id),
+                        role='employee',
+                        face_encoding=face_encoding.tobytes()
+                    )
+                    session.add(new_employee)
+                    message = translate('face_registered', lang) + f' ({name}). Password default: {employee_id}'
 
-        except Exception as e:
-            session.rollback()
-            return jsonify({
-                'status': 'error',
-                'message': f'Gagal menyimpan data: {str(e)}'
-            }), 500
-        finally:
-            session.close()
+                session.commit()
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': message
+                }), 200
+
+            except Exception as e:
+                session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Gagal menyimpan data: {str(e)}'
+                }), 500
+            finally:
+                session.close()
     
     except Exception as e:
         print(f"Error in /api/register: {str(e)}")
@@ -582,32 +748,65 @@ def recognize():
                     'detected': False
                 }), 404
             
-            # Check if employee has face encoding registered
-            if not current_employee.face_encoding:
+            # Try to load multiple face encodings first (NEW SYSTEM)
+            face_encodings_records = session.query(EmployeeFaceEncoding).filter_by(
+                employee_id=current_user_id
+            ).all()
+            
+            if face_encodings_records:
+                # NEW SYSTEM: Multiple encodings (better accuracy!)
+                known_encodings = [
+                    np.frombuffer(rec.face_encoding, dtype=np.float64) 
+                    for rec in face_encodings_records
+                ]
+                
+                # Compare with ALL stored encodings
+                all_matches = face_recognition.compare_faces(
+                    known_encodings, 
+                    unknown_encoding, 
+                    tolerance=config.FACE_RECOGNITION_TOLERANCE
+                )
+                all_distances = face_recognition.face_distance(known_encodings, unknown_encoding)
+                
+                # Use BEST match (minimum distance)
+                best_match_idx = np.argmin(all_distances)
+                best_distance = all_distances[best_match_idx]
+                is_match = all_matches[best_match_idx]
+                
+                print(f"🔍 [Multi-Photo Recognition] Compared with {len(known_encodings)} photos")
+                print(f"✅ Best match: Photo {best_match_idx + 1}, Distance: {best_distance:.4f}")
+                
+            elif current_employee.face_encoding:
+                # OLD SYSTEM: Single encoding (backward compatibility)
+                known_encoding = np.frombuffer(current_employee.face_encoding, dtype=np.float64)
+                
+                matches = face_recognition.compare_faces(
+                    [known_encoding], 
+                    unknown_encoding, 
+                    tolerance=config.FACE_RECOGNITION_TOLERANCE
+                )
+                distances = face_recognition.face_distance([known_encoding], unknown_encoding)
+                
+                is_match = matches[0]
+                best_distance = distances[0]
+                
+                print(f"🔍 [Single-Photo Recognition] Using legacy single photo")
+                
+            else:
+                # No face encodings at all
                 return jsonify({
                     'status': 'error',
                     'message': f'Wajah untuk akun {current_employee.name} belum terdaftar. Silakan hubungi admin.',
                     'detected': False
                 }), 200
             
-            # Get employee's face encoding
-            known_encoding = np.frombuffer(current_employee.face_encoding, dtype=np.float64)
-            
-            # Compare faces: 1-to-1 matching
-            matches = face_recognition.compare_faces(
-                [known_encoding], 
-                unknown_encoding, 
-                tolerance=config.FACE_RECOGNITION_TOLERANCE
-            )
-            face_distance = face_recognition.face_distance([known_encoding], unknown_encoding)
-            
-            # If face does NOT match → REJECT
-            if not matches[0]:
+            # Check if face matches
+            if not is_match:
                 return jsonify({
                     'status': 'error',
                     'message': f'Wajah tidak cocok dengan akun {current_employee.name}. Silakan gunakan wajah Anda sendiri.',
                     'detected': False,
-                    'confidence': float(1 - face_distance[0])
+                    'confidence': float(1 - best_distance)
                 }), 200
             
             # Face matches! Check if already marked attendance today
@@ -625,11 +824,11 @@ def recognize():
                     'employee_id': current_employee.employee_id,
                     'already_marked': True,
                     'detected': True,
-                    'confidence': float(1 - face_distance[0])
+                    'confidence': float(1 - best_distance)
                 }), 200
             
             # Mark attendance
-            confidence_score = int((1 - face_distance[0]) * 100)
+            confidence_score = int((1 - best_distance) * 100)
             new_attendance = Attendance(
                 employee_id=current_employee.employee_id,
                 check_in_type='face_recognition',
@@ -649,7 +848,7 @@ def recognize():
                 'employee_id': current_employee.employee_id,
                 'already_marked': False,
                 'detected': True,
-                'confidence': float(1 - face_distance[0]),
+                'confidence': float(1 - best_distance),
                 'quality_score': quality_result['quality_score'],
                 'timestamp': datetime.now().isoformat()
             }), 200

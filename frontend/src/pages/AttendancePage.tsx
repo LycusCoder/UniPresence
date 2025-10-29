@@ -87,6 +87,14 @@ function AttendancePage() {
   const [hasAttendedToday, setHasAttendedToday] = useState(false);
   const [attendanceTime, setAttendanceTime] = useState<string>('');
   const [recognizedUser, setRecognizedUser] = useState<string | null>(null);
+  
+  // Multi-Photo Registration States
+  const [isCapturingMulti, setIsCapturingMulti] = useState(false);
+  const [capturedPhotos, setCapturedPhotos] = useState<string[]>([]);
+  const [countdown, setCountdown] = useState<number>(0);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState<number>(0);
+  const TOTAL_PHOTOS = 3;
+  const PHOTO_DELAY_MS = 3000; // 3 seconds between photos
 
   useEffect(() => {
     return () => {
@@ -352,7 +360,131 @@ function AttendancePage() {
     }
   };
 
+  // Multi-Photo Capture Functions
+  const startMultiPhotoCapture = () => {
+    if (!regName.trim() || !regEmployeeId.trim()) {
+      showMessage('Nama dan NIP harus diisi sebelum memulai', 'error');
+      return;
+    }
+    
+    setCapturedPhotos([]);
+    setCurrentPhotoIndex(0);
+    setIsCapturingMulti(true);
+    setCountdown(3);
+    
+    // Start countdown for first photo
+    startCountdownForPhoto(0);
+  };
+  
+  const startCountdownForPhoto = (photoIndex: number) => {
+    let count = 3;
+    setCountdown(count);
+    
+    const countdownInterval = setInterval(() => {
+      count--;
+      setCountdown(count);
+      
+      if (count === 0) {
+        clearInterval(countdownInterval);
+        capturePhotoAtIndex(photoIndex);
+      }
+    }, 1000);
+  };
+  
+  const capturePhotoAtIndex = (photoIndex: number) => {
+    const imageData = captureImage();
+    
+    if (!imageData) {
+      showMessage(`Gagal menangkap foto ke-${photoIndex + 1}`, 'error');
+      setIsCapturingMulti(false);
+      return;
+    }
+    
+    // Add photo to array
+    setCapturedPhotos(prev => [...prev, imageData]);
+    
+    // Check if we need more photos
+    if (photoIndex + 1 < TOTAL_PHOTOS) {
+      setCurrentPhotoIndex(photoIndex + 1);
+      // Wait PHOTO_DELAY_MS then start countdown for next photo
+      setTimeout(() => {
+        startCountdownForPhoto(photoIndex + 1);
+      }, PHOTO_DELAY_MS);
+    } else {
+      // All photos captured!
+      setIsCapturingMulti(false);
+      setCountdown(0);
+      showMessage(`✅ ${TOTAL_PHOTOS} foto berhasil diambil! Silakan review dan submit.`, 'success');
+    }
+  };
+  
+  const retakePhoto = (photoIndex: number) => {
+    setCountdown(3);
+    
+    let count = 3;
+    const countdownInterval = setInterval(() => {
+      count--;
+      setCountdown(count);
+      
+      if (count === 0) {
+        clearInterval(countdownInterval);
+        
+        const imageData = captureImage();
+        if (imageData) {
+          // Replace photo at index
+          setCapturedPhotos(prev => {
+            const newPhotos = [...prev];
+            newPhotos[photoIndex] = imageData;
+            return newPhotos;
+          });
+          showMessage(`✅ Foto ke-${photoIndex + 1} berhasil diambil ulang!`, 'success');
+        } else {
+          showMessage('Gagal menangkap gambar', 'error');
+        }
+        setCountdown(0);
+      }
+    }, 1000);
+  };
+  
+  const cancelMultiPhotoCapture = () => {
+    setCapturedPhotos([]);
+    setCurrentPhotoIndex(0);
+    setIsCapturingMulti(false);
+    setCountdown(0);
+  };
+
+  const handleRegisterMultiPhoto = async () => {
+    if (capturedPhotos.length !== TOTAL_PHOTOS) {
+      showMessage(`Diperlukan ${TOTAL_PHOTOS} foto untuk registrasi`, 'error');
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const response = await axios.post(`${BACKEND_URL}/api/register`, {
+        name: regName,
+        employee_id: regEmployeeId,
+        images: capturedPhotos  // Send array of 3 images
+      }, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      showMessage(response.data.message, 'success');
+      setRegName('');
+      setRegEmployeeId('');
+      setCapturedPhotos([]);
+      setIsRegistering(false);
+      loadAttendanceRecords();
+    } catch (error: any) {
+      showMessage(error.response?.data?.message || 'Gagal mendaftarkan wajah', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleRegister = async () => {
+    // Legacy single photo registration (for backward compatibility)
     if (!regName.trim() || !regEmployeeId.trim()) {
       showMessage('Nama dan NIP harus diisi', 'error');
       return;
@@ -525,6 +657,34 @@ function AttendancePage() {
                         <span>Memeriksa...</span>
                       </div>
                     )}
+                    
+                    {/* Multi-Photo Capture Countdown Overlay */}
+                    {(isCapturingMulti || countdown > 0) && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl">
+                        <div className="text-center">
+                          {countdown > 0 ? (
+                            <>
+                              <div className="text-9xl font-bold text-white animate-bounce mb-4">
+                                {countdown}
+                              </div>
+                              <p className="text-xl text-white font-semibold mb-2">
+                                Foto {currentPhotoIndex + 1} dari {TOTAL_PHOTOS}
+                              </p>
+                              <p className="text-sm text-white/80">
+                                Hadapkan wajah ke kamera & tetap diam
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <Camera className="w-16 h-16 text-white animate-pulse mb-4 mx-auto" />
+                              <p className="text-xl text-white font-semibold">
+                                Menangkap foto {currentPhotoIndex + 1}...
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -560,54 +720,163 @@ function AttendancePage() {
                     
                     {isRegistering ? (
                       <div className="space-y-4 p-4 bg-red-50 rounded-xl border-2 border-red-200">
-                        <div className="flex items-start gap-2 text-red-800 text-sm">
-                          <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                          <p>Pastikan wajah terlihat jelas dan memenuhi standar kualitas sebelum mendaftar</p>
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Nama Lengkap
-                          </label>
-                          <input
-                            type="text"
-                            value={regName}
-                            onChange={(e) => setRegName(e.target.value)}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
-                            placeholder="Masukkan nama lengkap"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            NIP
-                          </label>
-                          <input
-                            type="text"
-                            value={regEmployeeId}
-                            onChange={(e) => setRegEmployeeId(e.target.value)}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
-                            placeholder="Masukkan NIP"
-                          />
-                        </div>
-                        
-                        <button
-                          onClick={handleRegister}
-                          disabled={isProcessing || !qualityResult?.is_acceptable}
-                          className="w-full px-6 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                          {isProcessing ? (
-                            <>
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              <span>Memproses...</span>
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus className="w-5 h-5" />
-                              <span>Daftarkan Wajah</span>
-                            </>
-                          )}
-                        </button>
+                        {!isCapturingMulti && capturedPhotos.length === 0 ? (
+                          /* Step 1: Input Form */
+                          <>
+                            <div className="flex items-start gap-2 text-red-800 text-sm">
+                              <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                              <p>Sistem akan mengambil <strong>3 foto otomatis</strong> dengan jeda 3 detik untuk akurasi maksimal</p>
+                            </div>
+                            
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Nama Lengkap
+                              </label>
+                              <input
+                                type="text"
+                                value={regName}
+                                onChange={(e) => setRegName(e.target.value)}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                                placeholder="Masukkan nama lengkap"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                NIP
+                              </label>
+                              <input
+                                type="text"
+                                value={regEmployeeId}
+                                onChange={(e) => setRegEmployeeId(e.target.value)}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                                placeholder="Masukkan NIP"
+                              />
+                            </div>
+                            
+                            <button
+                              onClick={startMultiPhotoCapture}
+                              disabled={!regName.trim() || !regEmployeeId.trim()}
+                              className="w-full px-6 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              <Camera className="w-5 h-5" />
+                              <span>Mulai Ambil 3 Foto</span>
+                            </button>
+                          </>
+                        ) : isCapturingMulti || countdown > 0 ? (
+                          /* Step 2: Capturing Photos with Countdown */
+                          <div className="text-center py-6">
+                            <div className="mb-4">
+                              <p className="text-lg font-bold text-gray-900 mb-2">
+                                Foto {currentPhotoIndex + 1} dari {TOTAL_PHOTOS}
+                              </p>
+                              <div className="flex justify-center gap-2 mb-4">
+                                {[...Array(TOTAL_PHOTOS)].map((_, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`h-2 w-16 rounded-full ${
+                                      idx < capturedPhotos.length
+                                        ? 'bg-green-500'
+                                        : idx === currentPhotoIndex
+                                        ? 'bg-red-500 animate-pulse'
+                                        : 'bg-gray-300'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {countdown > 0 ? (
+                              <div className="relative">
+                                <div className="text-8xl font-bold text-red-600 animate-bounce">
+                                  {countdown}
+                                </div>
+                                <p className="text-sm text-gray-600 mt-2">
+                                  Bersiap... Hadapkan wajah ke kamera
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center gap-2 text-green-600">
+                                <Loader2 className="w-6 h-6 animate-spin" />
+                                <span className="text-lg font-semibold">Menangkap...</span>
+                              </div>
+                            )}
+                            
+                            <button
+                              onClick={cancelMultiPhotoCapture}
+                              className="mt-6 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all"
+                            >
+                              Batalkan
+                            </button>
+                          </div>
+                        ) : capturedPhotos.length === TOTAL_PHOTOS ? (
+                          /* Step 3: Review & Submit */
+                          <>
+                            <div className="flex items-start gap-2 text-green-800 text-sm bg-green-100 p-3 rounded-lg">
+                              <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                              <p><strong>3 foto berhasil diambil!</strong> Silakan review dan submit registrasi.</p>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-3">
+                              {capturedPhotos.map((photo, idx) => (
+                                <div key={idx} className="relative group">
+                                  <img
+                                    src={photo}
+                                    alt={`Foto ${idx + 1}`}
+                                    className="w-full aspect-square object-cover rounded-lg border-2 border-green-500"
+                                  />
+                                  <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs font-bold">
+                                    Foto {idx + 1}
+                                  </div>
+                                  <button
+                                    onClick={() => retakePhoto(idx)}
+                                    disabled={countdown > 0}
+                                    className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                                    title="Ambil ulang"
+                                  >
+                                    <Camera className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {countdown > 0 && (
+                              <div className="text-center py-4">
+                                <div className="text-4xl font-bold text-red-600 animate-bounce">
+                                  {countdown}
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">Mengambil ulang...</p>
+                              </div>
+                            )}
+                            
+                            <div className="flex gap-3">
+                              <button
+                                onClick={cancelMultiPhotoCapture}
+                                disabled={isProcessing}
+                                className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-xl font-semibold hover:bg-gray-700 transition-all disabled:opacity-50"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                onClick={handleRegisterMultiPhoto}
+                                disabled={isProcessing || countdown > 0}
+                                className="flex-2 px-6 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold hover:from-red-700 hover:to-red-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                              >
+                                {isProcessing ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Memproses...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserPlus className="w-5 h-5" />
+                                    <span>Daftarkan Sekarang</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </>
+                        ) : null}
                       </div>
                     ) : (
                       <button
