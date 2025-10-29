@@ -103,6 +103,14 @@ function AttendancePage() {
   useEffect(() => {
     checkAttendanceStatus();
     loadAttendanceRecords();
+    
+    // Auto-start camera saat halaman load (kecuali mode registrasi)
+    if (!isRegistering) {
+      console.log('🚀 [Auto-Start] Starting camera automatically...');
+      setTimeout(() => {
+        startCamera();
+      }, 500); // Small delay untuk mounting
+    }
   }, []);
 
   const startCamera = async () => {
